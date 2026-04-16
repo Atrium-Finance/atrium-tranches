@@ -167,15 +167,12 @@ contract TrancheVault is ERC4626 {
         if (shares == 0) revert PrimeVaults__ZeroShares();
 
         address owner = _msgSender();
-        uint256 supply = totalSupply();
-        // Snapshot total value per share before any state changes (for event)
-        uint256 totalValue = supply > 0 ? (shares * totalAssets()) / supply : 0;
+        uint256 baseAmount = convertToAssets(shares);
 
         // Transfer shares from owner to vault (for CDO to potentially pull in SharesLock)
         _transfer(owner, address(this), shares);
         _approve(address(this), address(i_cdo), shares);
 
-        uint256 baseAmount = supply > 0 ? (shares * totalAssets()) / supply : 0;
         result = i_cdo.requestWithdraw(i_trancheId, baseAmount, receiver, shares);
 
         // SHARES_LOCK (type 3): CDO already pulled shares for escrow — do NOT burn
@@ -184,7 +181,7 @@ contract TrancheVault is ERC4626 {
             _burn(address(this), shares);
         }
 
-        emit WithdrawRequested(owner, receiver, shares, totalValue, result);
+        emit WithdrawRequested(owner, receiver, shares, baseAmount, result);
     }
 
     // ═══════════════════════════════════════════════════════════════════

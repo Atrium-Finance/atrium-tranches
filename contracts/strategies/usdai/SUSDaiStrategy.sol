@@ -7,10 +7,11 @@ pragma solidity ^0.8.24;
 //  See: docs/PV_V3_APR_ORACLE.md section 9
 // ══════════════════════════════════════════════════════════════════════
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {WithdrawResult, WithdrawType} from "../../interfaces/IStrategy.sol";
-import {BaseStrategy} from "../BaseStrategy.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import { WithdrawResult, WithdrawType } from "../../interfaces/IStrategy.sol";
+import { BaseStrategy } from "../BaseStrategy.sol";
 
 /**
  * @dev Minimal sUSDai interface matching actual Arbiscan ABI.
@@ -19,10 +20,15 @@ import {BaseStrategy} from "../BaseStrategy.sol";
 interface IStakedUSDai {
     // ERC-4626
     function deposit(uint256 assets, address receiver) external returns (uint256 shares);
+
     function convertToAssets(uint256 shares) external view returns (uint256);
+
     function convertToShares(uint256 assets) external view returns (uint256);
+
     function balanceOf(address account) external view returns (uint256);
+
     function transfer(address to, uint256 amount) external returns (bool);
+
     function approve(address spender, uint256 amount) external returns (bool);
 
     // ERC-7540 FIFO queue
@@ -37,10 +43,15 @@ interface IStakedUSDai {
     }
 
     function requestRedeem(uint256 shares, address controller, address owner) external returns (uint256 redemptionId);
+
     function redemption(uint256 redemptionId) external view returns (Redemption memory, uint256);
+
     function claimableRedeemRequest(uint256 redemptionId, address controller) external view returns (uint256);
+
     function pendingRedeemRequest(uint256 redemptionId, address controller) external view returns (uint256);
+
     function redeem(uint256 shares, address receiver, address controller) external returns (uint256);
+
     function redemptionIds(address controller) external view returns (uint256[] memory);
 }
 
@@ -67,9 +78,13 @@ contract SUSDaiStrategy is BaseStrategy {
     //  CONSTRUCTOR
     // ═══════════════════════════════════════════════════════════════════
 
-    constructor(address primeCDO_, address usdai_, address sUSDai_, address owner_) BaseStrategy(primeCDO_, usdai_, owner_) {
+    constructor(
+        address primeCDO_,
+        address sUSDai_,
+        address owner_
+    ) BaseStrategy(primeCDO_, IERC4626(sUSDai_).asset(), owner_) {
         i_sUSDai = IStakedUSDai(sUSDai_);
-        IERC20(usdai_).approve(sUSDai_, type(uint256).max);
+        IERC20(IERC4626(sUSDai_).asset()).approve(sUSDai_, type(uint256).max);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -133,12 +148,22 @@ contract SUSDaiStrategy is BaseStrategy {
      *      Only sUSDai output is supported — users convert sUSDai → USD.AI
      *      via the sUSDai ERC-7540 FIFO queue directly.
      */
-    function _withdraw(uint256 amount, address outputToken, address beneficiary) internal override returns (WithdrawResult memory result) {
+    function _withdraw(
+        uint256 amount,
+        address outputToken,
+        address beneficiary
+    ) internal override returns (WithdrawResult memory result) {
         if (outputToken != address(i_sUSDai)) revert PrimeVaults__UnsupportedToken(outputToken);
 
         uint256 shares = i_sUSDai.convertToShares(amount);
         i_sUSDai.transfer(beneficiary, shares);
-        result = WithdrawResult({wType: WithdrawType.INSTANT, amountOut: shares, cooldownId: 0, cooldownHandler: address(0), unlockTime: 0});
+        result = WithdrawResult({
+            wType: WithdrawType.INSTANT,
+            amountOut: shares,
+            cooldownId: 0,
+            cooldownHandler: address(0),
+            unlockTime: 0
+        });
         emit Withdrawn(outputToken, amount, shares);
     }
 

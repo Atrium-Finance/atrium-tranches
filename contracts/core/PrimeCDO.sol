@@ -8,6 +8,7 @@ pragma solidity ^0.8.24;
 // ══════════════════════════════════════════════════════════════════════
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
@@ -149,7 +150,8 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
             if (tranche == TrancheId.SENIOR) coverage = _getCoverageSenior();
             else coverage = _getCoverageMezz();
 
-            if (coverage < s_minCoverageForDeposit) revert PrimeVaults__CoverageTooLow(coverage, s_minCoverageForDeposit);
+            if (coverage < s_minCoverageForDeposit)
+                revert PrimeVaults__CoverageTooLow(coverage, s_minCoverageForDeposit);
         }
 
         // 3. Route tokens directly to strategy
@@ -157,8 +159,12 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         IERC20(token).forceApprove(address(i_strategy), amount);
         i_strategy.depositToken(token, amount);
 
-        // 4. Record deposit (base asset deposits are 1:1 in base-equivalent)
-        baseAmount = amount;
+        // 4. Convert to base-equivalent
+        //    If depositing sUSDai (yield-bearing), convert shares → assets via current exchange rate.
+        //    Otherwise (base asset USDai): 1:1.
+        if (token == i_outputToken) baseAmount = IERC4626(i_outputToken).convertToAssets(amount);
+        else baseAmount = amount;
+
         i_accounting.recordDeposit(tranche, baseAmount);
 
         // 5. Check junior shortfall
