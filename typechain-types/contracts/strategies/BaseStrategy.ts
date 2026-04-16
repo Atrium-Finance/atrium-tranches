@@ -64,6 +64,8 @@ export interface BaseStrategyInterface extends Interface {
       | "pendingOwner"
       | "predictWithdrawType"
       | "renounceOwnership"
+      | "s_guardian"
+      | "setGuardian"
       | "supportedTokens"
       | "totalAssets"
       | "transferOwnership"
@@ -75,6 +77,7 @@ export interface BaseStrategyInterface extends Interface {
     nameOrSignatureOrTopic:
       | "Deposited"
       | "EmergencyWithdrawn"
+      | "GuardianSet"
       | "OwnershipTransferStarted"
       | "OwnershipTransferred"
       | "Paused"
@@ -127,6 +130,14 @@ export interface BaseStrategyInterface extends Interface {
   encodeFunctionData(
     functionFragment: "renounceOwnership",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "s_guardian",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setGuardian",
+    values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "supportedTokens",
@@ -186,6 +197,11 @@ export interface BaseStrategyInterface extends Interface {
     functionFragment: "renounceOwnership",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "s_guardian", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "setGuardian",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "supportedTokens",
     data: BytesLike
@@ -225,6 +241,18 @@ export namespace EmergencyWithdrawnEvent {
   export type OutputTuple = [amount: bigint];
   export interface OutputObject {
     amount: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace GuardianSetEvent {
+  export type InputTuple = [guardian: AddressLike];
+  export type OutputTuple = [guardian: string];
+  export interface OutputObject {
+    guardian: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -383,6 +411,14 @@ export interface BaseStrategy extends BaseContract {
 
   renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
 
+  s_guardian: TypedContractMethod<[], [string], "view">;
+
+  setGuardian: TypedContractMethod<
+    [guardian_: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
   supportedTokens: TypedContractMethod<[], [string[]], "view">;
 
   totalAssets: TypedContractMethod<[], [bigint], "view">;
@@ -458,6 +494,12 @@ export interface BaseStrategy extends BaseContract {
     nameOrSignature: "renounceOwnership"
   ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
+    nameOrSignature: "s_guardian"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "setGuardian"
+  ): TypedContractMethod<[guardian_: AddressLike], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "supportedTokens"
   ): TypedContractMethod<[], [string[]], "view">;
   getFunction(
@@ -490,6 +532,13 @@ export interface BaseStrategy extends BaseContract {
     EmergencyWithdrawnEvent.InputTuple,
     EmergencyWithdrawnEvent.OutputTuple,
     EmergencyWithdrawnEvent.OutputObject
+  >;
+  getEvent(
+    key: "GuardianSet"
+  ): TypedContractEvent<
+    GuardianSetEvent.InputTuple,
+    GuardianSetEvent.OutputTuple,
+    GuardianSetEvent.OutputObject
   >;
   getEvent(
     key: "OwnershipTransferStarted"
@@ -548,6 +597,17 @@ export interface BaseStrategy extends BaseContract {
       EmergencyWithdrawnEvent.InputTuple,
       EmergencyWithdrawnEvent.OutputTuple,
       EmergencyWithdrawnEvent.OutputObject
+    >;
+
+    "GuardianSet(address)": TypedContractEvent<
+      GuardianSetEvent.InputTuple,
+      GuardianSetEvent.OutputTuple,
+      GuardianSetEvent.OutputObject
+    >;
+    GuardianSet: TypedContractEvent<
+      GuardianSetEvent.InputTuple,
+      GuardianSetEvent.OutputTuple,
+      GuardianSetEvent.OutputObject
     >;
 
     "OwnershipTransferStarted(address,address)": TypedContractEvent<

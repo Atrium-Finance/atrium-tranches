@@ -73,20 +73,25 @@ export interface PrimeCDOInterface extends Interface {
       | "registerTranche"
       | "renounceOwnership"
       | "requestWithdraw"
+      | "s_guardian"
       | "s_juniorShortfallPausePrice"
       | "s_minCoverageForDeposit"
       | "s_shortfallPaused"
       | "s_tranches"
       | "s_vaultToTranche"
+      | "setGuardian"
       | "setJuniorShortfallPausePrice"
       | "setMinCoverageForDeposit"
       | "strategy"
       | "transferOwnership"
+      | "triggerShortfallPause"
       | "unpauseShortfall"
   ): FunctionFragment;
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "EmergencyPauseTriggered"
+      | "GuardianSet"
       | "OwnershipTransferStarted"
       | "OwnershipTransferred"
       | "ShortfallPauseTriggered"
@@ -105,7 +110,7 @@ export interface PrimeCDOInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "claimReserve",
-    values?: undefined
+    values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "claimSharesWithdraw",
@@ -162,6 +167,10 @@ export interface PrimeCDOInterface extends Interface {
     values: [BigNumberish, BigNumberish, AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "s_guardian",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "s_juniorShortfallPausePrice",
     values?: undefined
   ): string;
@@ -182,6 +191,10 @@ export interface PrimeCDOInterface extends Interface {
     values: [AddressLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "setGuardian",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setJuniorShortfallPausePrice",
     values: [BigNumberish]
   ): string;
@@ -193,6 +206,10 @@ export interface PrimeCDOInterface extends Interface {
   encodeFunctionData(
     functionFragment: "transferOwnership",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "triggerShortfallPause",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "unpauseShortfall",
@@ -257,6 +274,7 @@ export interface PrimeCDOInterface extends Interface {
     functionFragment: "requestWithdraw",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "s_guardian", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "s_juniorShortfallPausePrice",
     data: BytesLike
@@ -275,6 +293,10 @@ export interface PrimeCDOInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "setGuardian",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "setJuniorShortfallPausePrice",
     data: BytesLike
   ): Result;
@@ -288,9 +310,37 @@ export interface PrimeCDOInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "triggerShortfallPause",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "unpauseShortfall",
     data: BytesLike
   ): Result;
+}
+
+export namespace EmergencyPauseTriggeredEvent {
+  export type InputTuple = [guardian: AddressLike];
+  export type OutputTuple = [guardian: string];
+  export interface OutputObject {
+    guardian: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace GuardianSetEvent {
+  export type InputTuple = [guardian: AddressLike];
+  export type OutputTuple = [guardian: string];
+  export interface OutputObject {
+    guardian: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace OwnershipTransferStartedEvent {
@@ -407,7 +457,11 @@ export interface PrimeCDO extends BaseContract {
 
   accounting: TypedContractMethod<[], [string], "view">;
 
-  claimReserve: TypedContractMethod<[], [bigint], "nonpayable">;
+  claimReserve: TypedContractMethod<
+    [recipient: AddressLike],
+    [bigint],
+    "nonpayable"
+  >;
 
   claimSharesWithdraw: TypedContractMethod<
     [cooldownId: BigNumberish],
@@ -464,6 +518,8 @@ export interface PrimeCDO extends BaseContract {
     "nonpayable"
   >;
 
+  s_guardian: TypedContractMethod<[], [string], "view">;
+
   s_juniorShortfallPausePrice: TypedContractMethod<[], [bigint], "view">;
 
   s_minCoverageForDeposit: TypedContractMethod<[], [bigint], "view">;
@@ -473,6 +529,12 @@ export interface PrimeCDO extends BaseContract {
   s_tranches: TypedContractMethod<[arg0: BigNumberish], [string], "view">;
 
   s_vaultToTranche: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+
+  setGuardian: TypedContractMethod<
+    [guardian_: AddressLike],
+    [void],
+    "nonpayable"
+  >;
 
   setJuniorShortfallPausePrice: TypedContractMethod<
     [price: BigNumberish],
@@ -494,6 +556,8 @@ export interface PrimeCDO extends BaseContract {
     "nonpayable"
   >;
 
+  triggerShortfallPause: TypedContractMethod<[], [void], "nonpayable">;
+
   unpauseShortfall: TypedContractMethod<[], [void], "nonpayable">;
 
   getFunction<T extends ContractMethod = ContractMethod>(
@@ -511,7 +575,7 @@ export interface PrimeCDO extends BaseContract {
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "claimReserve"
-  ): TypedContractMethod<[], [bigint], "nonpayable">;
+  ): TypedContractMethod<[recipient: AddressLike], [bigint], "nonpayable">;
   getFunction(
     nameOrSignature: "claimSharesWithdraw"
   ): TypedContractMethod<[cooldownId: BigNumberish], [bigint], "nonpayable">;
@@ -579,6 +643,9 @@ export interface PrimeCDO extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "s_guardian"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "s_juniorShortfallPausePrice"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -594,6 +661,9 @@ export interface PrimeCDO extends BaseContract {
     nameOrSignature: "s_vaultToTranche"
   ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
   getFunction(
+    nameOrSignature: "setGuardian"
+  ): TypedContractMethod<[guardian_: AddressLike], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "setJuniorShortfallPausePrice"
   ): TypedContractMethod<[price: BigNumberish], [void], "nonpayable">;
   getFunction(
@@ -606,9 +676,26 @@ export interface PrimeCDO extends BaseContract {
     nameOrSignature: "transferOwnership"
   ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
   getFunction(
+    nameOrSignature: "triggerShortfallPause"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "unpauseShortfall"
   ): TypedContractMethod<[], [void], "nonpayable">;
 
+  getEvent(
+    key: "EmergencyPauseTriggered"
+  ): TypedContractEvent<
+    EmergencyPauseTriggeredEvent.InputTuple,
+    EmergencyPauseTriggeredEvent.OutputTuple,
+    EmergencyPauseTriggeredEvent.OutputObject
+  >;
+  getEvent(
+    key: "GuardianSet"
+  ): TypedContractEvent<
+    GuardianSetEvent.InputTuple,
+    GuardianSetEvent.OutputTuple,
+    GuardianSetEvent.OutputObject
+  >;
   getEvent(
     key: "OwnershipTransferStarted"
   ): TypedContractEvent<
@@ -646,6 +733,28 @@ export interface PrimeCDO extends BaseContract {
   >;
 
   filters: {
+    "EmergencyPauseTriggered(address)": TypedContractEvent<
+      EmergencyPauseTriggeredEvent.InputTuple,
+      EmergencyPauseTriggeredEvent.OutputTuple,
+      EmergencyPauseTriggeredEvent.OutputObject
+    >;
+    EmergencyPauseTriggered: TypedContractEvent<
+      EmergencyPauseTriggeredEvent.InputTuple,
+      EmergencyPauseTriggeredEvent.OutputTuple,
+      EmergencyPauseTriggeredEvent.OutputObject
+    >;
+
+    "GuardianSet(address)": TypedContractEvent<
+      GuardianSetEvent.InputTuple,
+      GuardianSetEvent.OutputTuple,
+      GuardianSetEvent.OutputObject
+    >;
+    GuardianSet: TypedContractEvent<
+      GuardianSetEvent.InputTuple,
+      GuardianSetEvent.OutputTuple,
+      GuardianSetEvent.OutputObject
+    >;
+
     "OwnershipTransferStarted(address,address)": TypedContractEvent<
       OwnershipTransferStartedEvent.InputTuple,
       OwnershipTransferStartedEvent.OutputTuple,

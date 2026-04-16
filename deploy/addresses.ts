@@ -15,13 +15,19 @@ export const ARBITRUM = {
  * Default protocol parameters for MVP deployment.
  */
 export const DEFAULTS = {
-  RATIO_TARGET: BigInt("200000000000000000"), // 0.20e18 = 20%
-  RATIO_TOLERANCE: BigInt("30000000000000000"), // 0.03e18 = 3%
   MIN_COVERAGE_DEPOSIT: BigInt("1050000000000000000"), // 1.05e18 = 105%
   SHORTFALL_PAUSE_PRICE: BigInt("900000000000000000"), // 0.90e18 = 90%
   APR_STALE_AFTER: 30 * 86_400, // 30 days
-  SWAP_MAX_SLIPPAGE: 100, // 1%
-  SWAP_EMERGENCY_SLIPPAGE: 1000, // 10%
+  PRIMELOCK_DELAY: 24 * 3_600, // 24 hours — governance delay (hardcoded in PrimeLock.sol)
+} as const;
+
+/**
+ * Governance multisig addresses — placeholder zero addresses until real Safes deployed.
+ * Update these before running deploy/06_deploy_timelock.ts.
+ */
+export const GOVERNANCE = {
+  OPS_MULTISIG: "0x0000000000000000000000000000000000000000",
+  GUARDIAN_MULTISIG: "0x0000000000000000000000000000000000000000",
 } as const;
 
 /**
@@ -30,8 +36,6 @@ export const DEFAULTS = {
 export interface DeployedAddresses {
   // Shared (01)
   riskParams: string;
-  wethPriceOracle: string;
-  swapFacility: string;
   erc20Cooldown: string;
   sharesCooldown: string;
   // Market (02)
@@ -39,14 +43,15 @@ export interface DeployedAddresses {
   aprFeed: string;
   accounting: string;
   strategy: string;
-  aaveAdapter: string;
   redemptionPolicy: string;
   primeCDO: string;
   seniorVault: string;
   mezzVault: string;
   juniorVault: string;
-  // Periphery (03)
+  // Periphery (04)
   primeLens: string;
+  // Governance (06)
+  primeLock?: string;
 }
 
 export function loadDeployed(): DeployedAddresses {

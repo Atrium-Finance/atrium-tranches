@@ -123,6 +123,19 @@ const _abi = [
       {
         indexed: true,
         internalType: "address",
+        name: "guardian",
+        type: "address",
+      },
+    ],
+    name: "GuardianSet",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
         name: "previousOwner",
         type: "address",
       },
@@ -415,6 +428,32 @@ const _abi = [
   {
     inputs: [],
     name: "renounceOwnership",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "s_guardian",
+    outputs: [
+      {
+        internalType: "address",
+        name: "",
+        type: "address",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "guardian_",
+        type: "address",
+      },
+    ],
+    name: "setGuardian",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",

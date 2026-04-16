@@ -173,6 +173,10 @@ contract MockStakedUSDai is ERC20 {
         return assets * 1e18 / _rate;
     }
 
+    function asset() external view returns (address) {
+        return address(usdai);
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     //  TEST HELPERS
     // ═══════════════════════════════════════════════════════════════════

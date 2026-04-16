@@ -68,12 +68,20 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
     bool public s_shortfallPaused;
 
     // ═══════════════════════════════════════════════════════════════════
+    //  STATE — Emergency Guardian
+    // ═══════════════════════════════════════════════════════════════════
+
+    address public s_guardian;
+
+    // ═══════════════════════════════════════════════════════════════════
     //  EVENTS
     // ═══════════════════════════════════════════════════════════════════
 
     event ShortfallPauseTriggered(uint256 pricePerShare, uint256 threshold);
     event ShortfallUnpaused();
     event TrancheRegistered(TrancheId indexed tranche, address vault);
+    event GuardianSet(address indexed guardian);
+    event EmergencyPauseTriggered(address indexed guardian);
 
     // ═══════════════════════════════════════════════════════════════════
     //  ERRORS
@@ -95,6 +103,16 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
 
     modifier whenNotShortfallPaused() {
         if (s_shortfallPaused) revert PrimeVaults__ShortfallPaused();
+        _;
+    }
+
+    modifier onlyOwnerOrGuardian() {
+        if (msg.sender != owner() && msg.sender != s_guardian) revert PrimeVaults__Unauthorized(msg.sender);
+        _;
+    }
+
+    modifier onlyGuardian() {
+        if (msg.sender != s_guardian) revert PrimeVaults__Unauthorized(msg.sender);
         _;
     }
 
@@ -369,20 +387,40 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         s_juniorShortfallPausePrice = price;
     }
 
-    function unpauseShortfall() external onlyOwner {
+    function unpauseShortfall() external onlyOwnerOrGuardian {
         s_shortfallPaused = false;
         emit ShortfallUnpaused();
     }
 
     /**
-     * @notice Claim accumulated reserve (fees + gain cuts) to owner.
-     * @dev Withdraws reserve amount from strategy as sUSDai → transfers to owner.
-     * @return amountOut sUSDai amount sent to owner
+     * @notice Manually trigger emergency pause. Only callable by guardian.
+     * @dev Bypasses the automatic junior price-based trigger for emergency situations.
      */
-    function claimReserve() external onlyOwner returns (uint256 amountOut) {
+    function triggerShortfallPause() external onlyGuardian {
+        s_shortfallPaused = true;
+        emit EmergencyPauseTriggered(msg.sender);
+    }
+
+    /**
+     * @notice Set the emergency guardian address. Only callable by owner.
+     * @param guardian_ New guardian address (zero address disables guardian)
+     */
+    function setGuardian(address guardian_) external onlyOwner {
+        s_guardian = guardian_;
+        emit GuardianSet(guardian_);
+    }
+
+    /**
+     * @notice Claim accumulated reserve (fees + gain cuts) to a recipient.
+     * @dev Withdraws reserve amount from strategy as sUSDai → transfers to recipient.
+     * @param recipient Address that will receive the sUSDai
+     * @return amountOut sUSDai amount sent to recipient
+     */
+    function claimReserve(address recipient) external onlyOwner returns (uint256 amountOut) {
+        if (recipient == address(0)) revert PrimeVaults__ZeroAmount();
         uint256 reserveAmount = i_accounting.claimReserve();
         if (reserveAmount == 0) return 0;
-        WithdrawResult memory wr = i_strategy.withdraw(reserveAmount, i_outputToken, owner());
+        WithdrawResult memory wr = i_strategy.withdraw(reserveAmount, i_outputToken, recipient);
         amountOut = wr.amountOut;
     }
 

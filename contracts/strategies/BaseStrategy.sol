@@ -30,6 +30,18 @@ abstract contract BaseStrategy is Ownable2Step, Pausable, IStrategy {
     address public immutable i_baseAsset;
 
     // ═══════════════════════════════════════════════════════════════════
+    //  STATE — Emergency Guardian
+    // ═══════════════════════════════════════════════════════════════════
+
+    address public s_guardian;
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  EVENTS
+    // ═══════════════════════════════════════════════════════════════════
+
+    event GuardianSet(address indexed guardian);
+
+    // ═══════════════════════════════════════════════════════════════════
     //  ERRORS
     // ═══════════════════════════════════════════════════════════════════
 
@@ -43,6 +55,11 @@ abstract contract BaseStrategy is Ownable2Step, Pausable, IStrategy {
 
     modifier onlyCDO() {
         if (msg.sender != i_primeCDO) revert PrimeVaults__Unauthorized(msg.sender);
+        _;
+    }
+
+    modifier onlyOwnerOrGuardian() {
+        if (msg.sender != owner() && msg.sender != s_guardian) revert PrimeVaults__Unauthorized(msg.sender);
         _;
     }
 
@@ -104,12 +121,21 @@ abstract contract BaseStrategy is Ownable2Step, Pausable, IStrategy {
     //  ADMIN
     // ═══════════════════════════════════════════════════════════════════
 
-    function pause() external onlyOwner {
+    function pause() external onlyOwnerOrGuardian {
         _pause();
     }
 
-    function unpause() external onlyOwner {
+    function unpause() external onlyOwnerOrGuardian {
         _unpause();
+    }
+
+    /**
+     * @notice Set the emergency guardian address. Only callable by owner.
+     * @param guardian_ New guardian address (zero address disables guardian)
+     */
+    function setGuardian(address guardian_) external onlyOwner {
+        s_guardian = guardian_;
+        emit GuardianSet(guardian_);
     }
 
     // ═══════════════════════════════════════════════════════════════════

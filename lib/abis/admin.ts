@@ -85,7 +85,7 @@ export const PRIME_CDO_ADMIN_ABI = [
   //  WRITE — Reserve / Fee
   // ═══════════════════════════════════════════════════════════════════
   {
-    inputs: [],
+    inputs: [{ name: "recipient", type: "address" }],
     name: "claimReserve",
     outputs: [{ name: "amountOut", type: "uint256" }],
     stateMutability: "nonpayable",

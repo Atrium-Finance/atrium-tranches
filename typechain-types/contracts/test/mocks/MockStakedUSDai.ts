@@ -58,6 +58,7 @@ export interface MockStakedUSDaiInterface extends Interface {
     nameOrSignature:
       | "allowance"
       | "approve"
+      | "asset"
       | "balanceOf"
       | "claimableRedeemRequest"
       | "convertToAssets"
@@ -100,6 +101,7 @@ export interface MockStakedUSDaiInterface extends Interface {
     functionFragment: "approve",
     values: [AddressLike, BigNumberish]
   ): string;
+  encodeFunctionData(functionFragment: "asset", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "balanceOf",
     values: [AddressLike]
@@ -187,6 +189,7 @@ export interface MockStakedUSDaiInterface extends Interface {
 
   decodeFunctionResult(functionFragment: "allowance", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "approve", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "asset", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "balanceOf", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "claimableRedeemRequest",
@@ -381,6 +384,8 @@ export interface MockStakedUSDai extends BaseContract {
     "nonpayable"
   >;
 
+  asset: TypedContractMethod<[], [string], "view">;
+
   balanceOf: TypedContractMethod<[account: AddressLike], [bigint], "view">;
 
   claimableRedeemRequest: TypedContractMethod<
@@ -517,6 +522,9 @@ export interface MockStakedUSDai extends BaseContract {
     [boolean],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "asset"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "balanceOf"
   ): TypedContractMethod<[account: AddressLike], [bigint], "view">;
