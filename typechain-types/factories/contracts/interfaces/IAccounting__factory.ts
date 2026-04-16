@@ -10,19 +10,6 @@ import type {
 
 const _abi = [
   {
-    inputs: [
-      {
-        internalType: "uint256",
-        name: "slippageLoss",
-        type: "uint256",
-      },
-    ],
-    name: "applySlippageLoss",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
     inputs: [],
     name: "claimReserve",
     outputs: [
@@ -73,19 +60,6 @@ const _abi = [
   },
   {
     inputs: [],
-    name: "getJuniorBaseTVL",
-    outputs: [
-      {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
     name: "getJuniorTVL",
     outputs: [
       {
@@ -99,7 +73,7 @@ const _abi = [
   },
   {
     inputs: [],
-    name: "getJuniorWethTVL",
+    name: "getMezzAPR",
     outputs: [
       {
         internalType: "uint256",
@@ -200,36 +174,12 @@ const _abi = [
     inputs: [
       {
         internalType: "uint256",
-        name: "wethValueUSD",
-        type: "uint256",
-      },
-    ],
-    name: "setJuniorWethTVL",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      {
-        internalType: "uint256",
         name: "currentStrategyTVL",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "currentWethValueUSD",
         type: "uint256",
       },
     ],
     name: "updateTVL",
-    outputs: [
-      {
-        internalType: "uint256",
-        name: "wethCoverageUSD",
-        type: "uint256",
-      },
-    ],
+    outputs: [],
     stateMutability: "nonpayable",
     type: "function",
   },

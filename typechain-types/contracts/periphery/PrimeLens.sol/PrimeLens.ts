@@ -30,6 +30,7 @@ export declare namespace PrimeLens {
     totalAssets: BigNumberish;
     totalSupply: BigNumberish;
     sharePrice: BigNumberish;
+    apr: BigNumberish;
   };
 
   export type TrancheInfoStructOutput = [
@@ -39,7 +40,8 @@ export declare namespace PrimeLens {
     symbol: string,
     totalAssets: bigint,
     totalSupply: bigint,
-    sharePrice: bigint
+    sharePrice: bigint,
+    apr: bigint
   ] & {
     trancheId: bigint;
     vault: string;
@@ -48,6 +50,7 @@ export declare namespace PrimeLens {
     totalAssets: bigint;
     totalSupply: bigint;
     sharePrice: bigint;
+    apr: bigint;
   };
 
   export type PendingWithdrawStruct = {
@@ -82,34 +85,6 @@ export declare namespace PrimeLens {
     status: bigint;
     isClaimable: boolean;
     timeRemaining: bigint;
-  };
-
-  export type JuniorPositionStruct = {
-    baseTVL: BigNumberish;
-    wethTVL: BigNumberish;
-    totalTVL: BigNumberish;
-    wethAmount: BigNumberish;
-    wethPrice: BigNumberish;
-    currentRatio: BigNumberish;
-    aaveAPR: BigNumberish;
-  };
-
-  export type JuniorPositionStructOutput = [
-    baseTVL: bigint,
-    wethTVL: bigint,
-    totalTVL: bigint,
-    wethAmount: bigint,
-    wethPrice: bigint,
-    currentRatio: bigint,
-    aaveAPR: bigint
-  ] & {
-    baseTVL: bigint;
-    wethTVL: bigint;
-    totalTVL: bigint;
-    wethAmount: bigint;
-    wethPrice: bigint;
-    currentRatio: bigint;
-    aaveAPR: bigint;
   };
 
   export type ProtocolHealthStruct = {
@@ -149,40 +124,6 @@ export declare namespace PrimeLens {
     strategyTVL: bigint;
   };
 
-  export type RebalanceStatusStruct = {
-    currentRatio: BigNumberish;
-    targetRatio: BigNumberish;
-    tolerance: BigNumberish;
-    wethAmount: BigNumberish;
-    wethValueUSD: BigNumberish;
-    wethPrice: BigNumberish;
-    needsSell: boolean;
-    needsBuy: boolean;
-    excessOrDeficitUSD: BigNumberish;
-  };
-
-  export type RebalanceStatusStructOutput = [
-    currentRatio: bigint,
-    targetRatio: bigint,
-    tolerance: bigint,
-    wethAmount: bigint,
-    wethValueUSD: bigint,
-    wethPrice: bigint,
-    needsSell: boolean,
-    needsBuy: boolean,
-    excessOrDeficitUSD: bigint
-  ] & {
-    currentRatio: bigint;
-    targetRatio: bigint;
-    tolerance: bigint;
-    wethAmount: bigint;
-    wethValueUSD: bigint;
-    wethPrice: bigint;
-    needsSell: boolean;
-    needsBuy: boolean;
-    excessOrDeficitUSD: bigint;
-  };
-
   export type WithdrawConditionStruct = {
     mechanism: BigNumberish;
     feeBps: BigNumberish;
@@ -211,12 +152,9 @@ export interface PrimeLensInterface extends Interface {
     nameOrSignature:
       | "getAllTranches"
       | "getClaimableWithdraws"
-      | "getJuniorPosition"
       | "getProtocolHealth"
       | "getTrancheInfo"
       | "getUserPendingWithdraws"
-      | "getWETHRebalanceStatus"
-      | "i_aaveAdapter"
       | "i_accounting"
       | "i_cdo"
       | "i_erc20Cooldown"
@@ -226,7 +164,6 @@ export interface PrimeLensInterface extends Interface {
       | "i_seniorVault"
       | "i_sharesCooldown"
       | "i_strategy"
-      | "i_wethOracle"
       | "previewWithdrawCondition"
   ): FunctionFragment;
 
@@ -239,10 +176,6 @@ export interface PrimeLensInterface extends Interface {
     values: [AddressLike]
   ): string;
   encodeFunctionData(
-    functionFragment: "getJuniorPosition",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "getProtocolHealth",
     values?: undefined
   ): string;
@@ -253,14 +186,6 @@ export interface PrimeLensInterface extends Interface {
   encodeFunctionData(
     functionFragment: "getUserPendingWithdraws",
     values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getWETHRebalanceStatus",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "i_aaveAdapter",
-    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "i_accounting",
@@ -296,10 +221,6 @@ export interface PrimeLensInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "i_wethOracle",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "previewWithdrawCondition",
     values: [BigNumberish]
   ): string;
@@ -313,10 +234,6 @@ export interface PrimeLensInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "getJuniorPosition",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "getProtocolHealth",
     data: BytesLike
   ): Result;
@@ -326,14 +243,6 @@ export interface PrimeLensInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "getUserPendingWithdraws",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "getWETHRebalanceStatus",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "i_aaveAdapter",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -366,10 +275,6 @@ export interface PrimeLensInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "i_strategy", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "i_wethOracle",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(
     functionFragment: "previewWithdrawCondition",
     data: BytesLike
@@ -441,12 +346,6 @@ export interface PrimeLens extends BaseContract {
     "view"
   >;
 
-  getJuniorPosition: TypedContractMethod<
-    [],
-    [PrimeLens.JuniorPositionStructOutput],
-    "view"
-  >;
-
   getProtocolHealth: TypedContractMethod<
     [],
     [PrimeLens.ProtocolHealthStructOutput],
@@ -465,14 +364,6 @@ export interface PrimeLens extends BaseContract {
     "view"
   >;
 
-  getWETHRebalanceStatus: TypedContractMethod<
-    [],
-    [PrimeLens.RebalanceStatusStructOutput],
-    "view"
-  >;
-
-  i_aaveAdapter: TypedContractMethod<[], [string], "view">;
-
   i_accounting: TypedContractMethod<[], [string], "view">;
 
   i_cdo: TypedContractMethod<[], [string], "view">;
@@ -490,8 +381,6 @@ export interface PrimeLens extends BaseContract {
   i_sharesCooldown: TypedContractMethod<[], [string], "view">;
 
   i_strategy: TypedContractMethod<[], [string], "view">;
-
-  i_wethOracle: TypedContractMethod<[], [string], "view">;
 
   previewWithdrawCondition: TypedContractMethod<
     [tranche: BigNumberish],
@@ -528,9 +417,6 @@ export interface PrimeLens extends BaseContract {
     "view"
   >;
   getFunction(
-    nameOrSignature: "getJuniorPosition"
-  ): TypedContractMethod<[], [PrimeLens.JuniorPositionStructOutput], "view">;
-  getFunction(
     nameOrSignature: "getProtocolHealth"
   ): TypedContractMethod<[], [PrimeLens.ProtocolHealthStructOutput], "view">;
   getFunction(
@@ -547,12 +433,6 @@ export interface PrimeLens extends BaseContract {
     [PrimeLens.PendingWithdrawStructOutput[]],
     "view"
   >;
-  getFunction(
-    nameOrSignature: "getWETHRebalanceStatus"
-  ): TypedContractMethod<[], [PrimeLens.RebalanceStatusStructOutput], "view">;
-  getFunction(
-    nameOrSignature: "i_aaveAdapter"
-  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "i_accounting"
   ): TypedContractMethod<[], [string], "view">;
@@ -579,9 +459,6 @@ export interface PrimeLens extends BaseContract {
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "i_strategy"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
-    nameOrSignature: "i_wethOracle"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "previewWithdrawCondition"

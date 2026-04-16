@@ -31,8 +31,6 @@ export type CDOWithdrawResultStruct = {
   unlockTime: BigNumberish;
   feeAmount: BigNumberish;
   appliedCooldownType: BigNumberish;
-  wethAmount: BigNumberish;
-  wethCooldownId: BigNumberish;
 };
 
 export type CDOWithdrawResultStructOutput = [
@@ -42,9 +40,7 @@ export type CDOWithdrawResultStructOutput = [
   cooldownHandler: string,
   unlockTime: bigint,
   feeAmount: bigint,
-  appliedCooldownType: bigint,
-  wethAmount: bigint,
-  wethCooldownId: bigint
+  appliedCooldownType: bigint
 ] & {
   isInstant: boolean;
   amountOut: bigint;
@@ -53,8 +49,6 @@ export type CDOWithdrawResultStructOutput = [
   unlockTime: bigint;
   feeAmount: bigint;
   appliedCooldownType: bigint;
-  wethAmount: bigint;
-  wethCooldownId: bigint;
 };
 
 export interface TrancheVaultInterface extends Interface {
@@ -71,10 +65,8 @@ export interface TrancheVaultInterface extends Interface {
       | "convertToShares"
       | "decimals"
       | "deposit"
-      | "depositJunior"
       | "i_cdo"
       | "i_trancheId"
-      | "i_weth"
       | "maxDeposit"
       | "maxMint"
       | "maxRedeem"
@@ -99,7 +91,6 @@ export interface TrancheVaultInterface extends Interface {
     nameOrSignatureOrTopic:
       | "Approval"
       | "Deposit"
-      | "JuniorDeposited"
       | "Transfer"
       | "Withdraw"
       | "WithdrawRequested"
@@ -143,16 +134,11 @@ export interface TrancheVaultInterface extends Interface {
     functionFragment: "deposit",
     values: [BigNumberish, AddressLike]
   ): string;
-  encodeFunctionData(
-    functionFragment: "depositJunior",
-    values: [BigNumberish, BigNumberish, AddressLike]
-  ): string;
   encodeFunctionData(functionFragment: "i_cdo", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "i_trancheId",
     values?: undefined
   ): string;
-  encodeFunctionData(functionFragment: "i_weth", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "maxDeposit",
     values: [AddressLike]
@@ -246,16 +232,11 @@ export interface TrancheVaultInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "decimals", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "deposit", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "depositJunior",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(functionFragment: "i_cdo", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "i_trancheId",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "i_weth", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "maxDeposit", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "maxMint", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "maxRedeem", data: BytesLike): Result;
@@ -338,34 +319,6 @@ export namespace DepositEvent {
     sender: string;
     owner: string;
     assets: bigint;
-    shares: bigint;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
-export namespace JuniorDepositedEvent {
-  export type InputTuple = [
-    caller: AddressLike,
-    receiver: AddressLike,
-    baseAmount: BigNumberish,
-    wethAmount: BigNumberish,
-    shares: BigNumberish
-  ];
-  export type OutputTuple = [
-    caller: string,
-    receiver: string,
-    baseAmount: bigint,
-    wethAmount: bigint,
-    shares: bigint
-  ];
-  export interface OutputObject {
-    caller: string;
-    receiver: string;
-    baseAmount: bigint;
-    wethAmount: bigint;
     shares: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
@@ -545,17 +498,9 @@ export interface TrancheVault extends BaseContract {
     "nonpayable"
   >;
 
-  depositJunior: TypedContractMethod<
-    [baseAmount: BigNumberish, wethAmount: BigNumberish, receiver: AddressLike],
-    [bigint],
-    "nonpayable"
-  >;
-
   i_cdo: TypedContractMethod<[], [string], "view">;
 
   i_trancheId: TypedContractMethod<[], [bigint], "view">;
-
-  i_weth: TypedContractMethod<[], [string], "view">;
 
   maxDeposit: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
 
@@ -679,21 +624,11 @@ export interface TrancheVault extends BaseContract {
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "depositJunior"
-  ): TypedContractMethod<
-    [baseAmount: BigNumberish, wethAmount: BigNumberish, receiver: AddressLike],
-    [bigint],
-    "nonpayable"
-  >;
-  getFunction(
     nameOrSignature: "i_cdo"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "i_trancheId"
   ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "i_weth"
-  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "maxDeposit"
   ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
@@ -788,13 +723,6 @@ export interface TrancheVault extends BaseContract {
     DepositEvent.OutputObject
   >;
   getEvent(
-    key: "JuniorDeposited"
-  ): TypedContractEvent<
-    JuniorDepositedEvent.InputTuple,
-    JuniorDepositedEvent.OutputTuple,
-    JuniorDepositedEvent.OutputObject
-  >;
-  getEvent(
     key: "Transfer"
   ): TypedContractEvent<
     TransferEvent.InputTuple,
@@ -837,17 +765,6 @@ export interface TrancheVault extends BaseContract {
       DepositEvent.InputTuple,
       DepositEvent.OutputTuple,
       DepositEvent.OutputObject
-    >;
-
-    "JuniorDeposited(address,address,uint256,uint256,uint256)": TypedContractEvent<
-      JuniorDepositedEvent.InputTuple,
-      JuniorDepositedEvent.OutputTuple,
-      JuniorDepositedEvent.OutputObject
-    >;
-    JuniorDeposited: TypedContractEvent<
-      JuniorDepositedEvent.InputTuple,
-      JuniorDepositedEvent.OutputTuple,
-      JuniorDepositedEvent.OutputObject
     >;
 
     "Transfer(address,address,uint256)": TypedContractEvent<

@@ -2,4 +2,5 @@
 /* tslint:disable */
 /* eslint-disable */
 export * as implementations from "./implementations";
+export * as usdai from "./usdai";
 export { BaseStrategy__factory } from "./BaseStrategy__factory";

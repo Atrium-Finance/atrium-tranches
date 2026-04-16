@@ -126,10 +126,6 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.RiskParams__factory>;
     getContractFactory(
-      name: "IAaveWETHAdapter",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.IAaveWETHAdapter__factory>;
-    getContractFactory(
       name: "IAccounting",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IAccounting__factory>;
@@ -158,45 +154,13 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IQuoterV2__factory>;
     getContractFactory(
-      name: "IRatioController",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.IRatioController__factory>;
-    getContractFactory(
       name: "IStrategy",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IStrategy__factory>;
     getContractFactory(
-      name: "ISwapFacility",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.ISwapFacility__factory>;
-    getContractFactory(
       name: "ISwapRouter",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ISwapRouter__factory>;
-    getContractFactory(
-      name: "IWETHPriceOracle",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.IWETHPriceOracle__factory>;
-    getContractFactory(
-      name: "AaveWETHAdapter",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.AaveWETHAdapter__factory>;
-    getContractFactory(
-      name: "IAaveV3Pool",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.IAaveV3Pool__factory>;
-    getContractFactory(
-      name: "SwapFacility",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.SwapFacility__factory>;
-    getContractFactory(
-      name: "AggregatorV3Interface",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.AggregatorV3Interface__factory>;
-    getContractFactory(
-      name: "WETHPriceOracle",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.WETHPriceOracle__factory>;
     getContractFactory(
       name: "FixedPointMathHarness",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -229,6 +193,22 @@ declare module "hardhat/types/runtime" {
       name: "BaseStrategy",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.BaseStrategy__factory>;
+    getContractFactory(
+      name: "IStakedUSDai",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IStakedUSDai__factory>;
+    getContractFactory(
+      name: "SUSDaiStrategy",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.SUSDaiStrategy__factory>;
+    getContractFactory(
+      name: "IAavePool",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IAavePool__factory>;
+    getContractFactory(
+      name: "SUSDaiAprPairProvider",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.SUSDaiAprPairProvider__factory>;
     getContractFactory(
       name: "IStakedUSDai",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -431,11 +411,6 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.RiskParams>;
     getContractAt(
-      name: "IAaveWETHAdapter",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.IAaveWETHAdapter>;
-    getContractAt(
       name: "IAccounting",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -471,55 +446,15 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.IQuoterV2>;
     getContractAt(
-      name: "IRatioController",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.IRatioController>;
-    getContractAt(
       name: "IStrategy",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.IStrategy>;
     getContractAt(
-      name: "ISwapFacility",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.ISwapFacility>;
-    getContractAt(
       name: "ISwapRouter",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.ISwapRouter>;
-    getContractAt(
-      name: "IWETHPriceOracle",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.IWETHPriceOracle>;
-    getContractAt(
-      name: "AaveWETHAdapter",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.AaveWETHAdapter>;
-    getContractAt(
-      name: "IAaveV3Pool",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.IAaveV3Pool>;
-    getContractAt(
-      name: "SwapFacility",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.SwapFacility>;
-    getContractAt(
-      name: "AggregatorV3Interface",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.AggregatorV3Interface>;
-    getContractAt(
-      name: "WETHPriceOracle",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.WETHPriceOracle>;
     getContractAt(
       name: "FixedPointMathHarness",
       address: string | ethers.Addressable,
@@ -560,6 +495,26 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.BaseStrategy>;
+    getContractAt(
+      name: "IStakedUSDai",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IStakedUSDai>;
+    getContractAt(
+      name: "SUSDaiStrategy",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.SUSDaiStrategy>;
+    getContractAt(
+      name: "IAavePool",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IAavePool>;
+    getContractAt(
+      name: "SUSDaiAprPairProvider",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.SUSDaiAprPairProvider>;
     getContractAt(
       name: "IStakedUSDai",
       address: string | ethers.Addressable,
@@ -749,10 +704,6 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RiskParams>;
     deployContract(
-      name: "IAaveWETHAdapter",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.IAaveWETHAdapter>;
-    deployContract(
       name: "IAccounting",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IAccounting>;
@@ -781,45 +732,13 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IQuoterV2>;
     deployContract(
-      name: "IRatioController",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.IRatioController>;
-    deployContract(
       name: "IStrategy",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IStrategy>;
     deployContract(
-      name: "ISwapFacility",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.ISwapFacility>;
-    deployContract(
       name: "ISwapRouter",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ISwapRouter>;
-    deployContract(
-      name: "IWETHPriceOracle",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.IWETHPriceOracle>;
-    deployContract(
-      name: "AaveWETHAdapter",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.AaveWETHAdapter>;
-    deployContract(
-      name: "IAaveV3Pool",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.IAaveV3Pool>;
-    deployContract(
-      name: "SwapFacility",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.SwapFacility>;
-    deployContract(
-      name: "AggregatorV3Interface",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.AggregatorV3Interface>;
-    deployContract(
-      name: "WETHPriceOracle",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.WETHPriceOracle>;
     deployContract(
       name: "FixedPointMathHarness",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -852,6 +771,22 @@ declare module "hardhat/types/runtime" {
       name: "BaseStrategy",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.BaseStrategy>;
+    deployContract(
+      name: "IStakedUSDai",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IStakedUSDai>;
+    deployContract(
+      name: "SUSDaiStrategy",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.SUSDaiStrategy>;
+    deployContract(
+      name: "IAavePool",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IAavePool>;
+    deployContract(
+      name: "SUSDaiAprPairProvider",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.SUSDaiAprPairProvider>;
     deployContract(
       name: "IStakedUSDai",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -1054,11 +989,6 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RiskParams>;
     deployContract(
-      name: "IAaveWETHAdapter",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.IAaveWETHAdapter>;
-    deployContract(
       name: "IAccounting",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -1094,55 +1024,15 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IQuoterV2>;
     deployContract(
-      name: "IRatioController",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.IRatioController>;
-    deployContract(
       name: "IStrategy",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IStrategy>;
     deployContract(
-      name: "ISwapFacility",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.ISwapFacility>;
-    deployContract(
       name: "ISwapRouter",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ISwapRouter>;
-    deployContract(
-      name: "IWETHPriceOracle",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.IWETHPriceOracle>;
-    deployContract(
-      name: "AaveWETHAdapter",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.AaveWETHAdapter>;
-    deployContract(
-      name: "IAaveV3Pool",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.IAaveV3Pool>;
-    deployContract(
-      name: "SwapFacility",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.SwapFacility>;
-    deployContract(
-      name: "AggregatorV3Interface",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.AggregatorV3Interface>;
-    deployContract(
-      name: "WETHPriceOracle",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.WETHPriceOracle>;
     deployContract(
       name: "FixedPointMathHarness",
       args: any[],
@@ -1183,6 +1073,26 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.BaseStrategy>;
+    deployContract(
+      name: "IStakedUSDai",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IStakedUSDai>;
+    deployContract(
+      name: "SUSDaiStrategy",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.SUSDaiStrategy>;
+    deployContract(
+      name: "IAavePool",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IAavePool>;
+    deployContract(
+      name: "SUSDaiAprPairProvider",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.SUSDaiAprPairProvider>;
     deployContract(
       name: "IStakedUSDai",
       args: any[],

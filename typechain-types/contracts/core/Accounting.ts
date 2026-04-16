@@ -27,13 +27,10 @@ export interface AccountingInterface extends Interface {
   getFunction(
     nameOrSignature:
       | "PRECISION"
-      | "applySlippageLoss"
       | "claimReserve"
       | "getAllTVLs"
       | "getJuniorAPR"
-      | "getJuniorBaseTVL"
       | "getJuniorTVL"
-      | "getJuniorWethTVL"
       | "getMezzAPR"
       | "getSeniorAPR"
       | "getTrancheTVL"
@@ -43,7 +40,6 @@ export interface AccountingInterface extends Interface {
       | "recordFee"
       | "recordWithdraw"
       | "s_juniorBaseTVL"
-      | "s_juniorWethTVL"
       | "s_lastUpdateTimestamp"
       | "s_mezzTVL"
       | "s_mzTargetIndex"
@@ -52,7 +48,6 @@ export interface AccountingInterface extends Interface {
       | "s_seniorTVL"
       | "s_srtTargetIndex"
       | "setCDO"
-      | "setJuniorWethTVL"
       | "updateTVL"
   ): FunctionFragment;
 
@@ -62,16 +57,11 @@ export interface AccountingInterface extends Interface {
       | "DepositRecorded"
       | "FeeRecorded"
       | "GainSplit"
-      | "JuniorWethTVLSet"
       | "LossApplied"
       | "WithdrawRecorded"
   ): EventFragment;
 
   encodeFunctionData(functionFragment: "PRECISION", values?: undefined): string;
-  encodeFunctionData(
-    functionFragment: "applySlippageLoss",
-    values: [BigNumberish]
-  ): string;
   encodeFunctionData(
     functionFragment: "claimReserve",
     values?: undefined
@@ -85,15 +75,7 @@ export interface AccountingInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "getJuniorBaseTVL",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "getJuniorTVL",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getJuniorWethTVL",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -130,10 +112,6 @@ export interface AccountingInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "s_juniorWethTVL",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "s_lastUpdateTimestamp",
     values?: undefined
   ): string;
@@ -160,19 +138,11 @@ export interface AccountingInterface extends Interface {
   ): string;
   encodeFunctionData(functionFragment: "setCDO", values: [AddressLike]): string;
   encodeFunctionData(
-    functionFragment: "setJuniorWethTVL",
-    values: [BigNumberish]
-  ): string;
-  encodeFunctionData(
     functionFragment: "updateTVL",
-    values: [BigNumberish, BigNumberish]
+    values: [BigNumberish]
   ): string;
 
   decodeFunctionResult(functionFragment: "PRECISION", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "applySlippageLoss",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(
     functionFragment: "claimReserve",
     data: BytesLike
@@ -183,15 +153,7 @@ export interface AccountingInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "getJuniorBaseTVL",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "getJuniorTVL",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "getJuniorWethTVL",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "getMezzAPR", data: BytesLike): Result;
@@ -222,10 +184,6 @@ export interface AccountingInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "s_juniorWethTVL",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "s_lastUpdateTimestamp",
     data: BytesLike
   ): Result;
@@ -248,10 +206,6 @@ export interface AccountingInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "setCDO", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "setJuniorWethTVL",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(functionFragment: "updateTVL", data: BytesLike): Result;
 }
 
@@ -321,36 +275,21 @@ export namespace GainSplitEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
-export namespace JuniorWethTVLSetEvent {
-  export type InputTuple = [wethValueUSD: BigNumberish];
-  export type OutputTuple = [wethValueUSD: bigint];
-  export interface OutputObject {
-    wethValueUSD: bigint;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
 export namespace LossAppliedEvent {
   export type InputTuple = [
     loss: BigNumberish,
-    wethAbsorbed: BigNumberish,
     jrAbsorbed: BigNumberish,
     mzAbsorbed: BigNumberish,
     srAbsorbed: BigNumberish
   ];
   export type OutputTuple = [
     loss: bigint,
-    wethAbsorbed: bigint,
     jrAbsorbed: bigint,
     mzAbsorbed: bigint,
     srAbsorbed: bigint
   ];
   export interface OutputObject {
     loss: bigint;
-    wethAbsorbed: bigint;
     jrAbsorbed: bigint;
     mzAbsorbed: bigint;
     srAbsorbed: bigint;
@@ -419,12 +358,6 @@ export interface Accounting extends BaseContract {
 
   PRECISION: TypedContractMethod<[], [bigint], "view">;
 
-  applySlippageLoss: TypedContractMethod<
-    [slippageLoss: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-
   claimReserve: TypedContractMethod<[], [bigint], "nonpayable">;
 
   getAllTVLs: TypedContractMethod<
@@ -435,11 +368,7 @@ export interface Accounting extends BaseContract {
 
   getJuniorAPR: TypedContractMethod<[], [bigint], "view">;
 
-  getJuniorBaseTVL: TypedContractMethod<[], [bigint], "view">;
-
   getJuniorTVL: TypedContractMethod<[], [bigint], "view">;
-
-  getJuniorWethTVL: TypedContractMethod<[], [bigint], "view">;
 
   getMezzAPR: TypedContractMethod<[], [bigint], "view">;
 
@@ -471,8 +400,6 @@ export interface Accounting extends BaseContract {
 
   s_juniorBaseTVL: TypedContractMethod<[], [bigint], "view">;
 
-  s_juniorWethTVL: TypedContractMethod<[], [bigint], "view">;
-
   s_lastUpdateTimestamp: TypedContractMethod<[], [bigint], "view">;
 
   s_mezzTVL: TypedContractMethod<[], [bigint], "view">;
@@ -489,15 +416,9 @@ export interface Accounting extends BaseContract {
 
   setCDO: TypedContractMethod<[cdo_: AddressLike], [void], "nonpayable">;
 
-  setJuniorWethTVL: TypedContractMethod<
-    [wethValueUSD: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-
   updateTVL: TypedContractMethod<
-    [currentStrategyTVL: BigNumberish, currentWethValueUSD: BigNumberish],
-    [bigint],
+    [currentStrategyTVL: BigNumberish],
+    [void],
     "nonpayable"
   >;
 
@@ -508,9 +429,6 @@ export interface Accounting extends BaseContract {
   getFunction(
     nameOrSignature: "PRECISION"
   ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "applySlippageLoss"
-  ): TypedContractMethod<[slippageLoss: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "claimReserve"
   ): TypedContractMethod<[], [bigint], "nonpayable">;
@@ -525,13 +443,7 @@ export interface Accounting extends BaseContract {
     nameOrSignature: "getJuniorAPR"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "getJuniorBaseTVL"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
     nameOrSignature: "getJuniorTVL"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "getJuniorWethTVL"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getMezzAPR"
@@ -573,9 +485,6 @@ export interface Accounting extends BaseContract {
     nameOrSignature: "s_juniorBaseTVL"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "s_juniorWethTVL"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
     nameOrSignature: "s_lastUpdateTimestamp"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -600,13 +509,10 @@ export interface Accounting extends BaseContract {
     nameOrSignature: "setCDO"
   ): TypedContractMethod<[cdo_: AddressLike], [void], "nonpayable">;
   getFunction(
-    nameOrSignature: "setJuniorWethTVL"
-  ): TypedContractMethod<[wethValueUSD: BigNumberish], [void], "nonpayable">;
-  getFunction(
     nameOrSignature: "updateTVL"
   ): TypedContractMethod<
-    [currentStrategyTVL: BigNumberish, currentWethValueUSD: BigNumberish],
-    [bigint],
+    [currentStrategyTVL: BigNumberish],
+    [void],
     "nonpayable"
   >;
 
@@ -637,13 +543,6 @@ export interface Accounting extends BaseContract {
     GainSplitEvent.InputTuple,
     GainSplitEvent.OutputTuple,
     GainSplitEvent.OutputObject
-  >;
-  getEvent(
-    key: "JuniorWethTVLSet"
-  ): TypedContractEvent<
-    JuniorWethTVLSetEvent.InputTuple,
-    JuniorWethTVLSetEvent.OutputTuple,
-    JuniorWethTVLSetEvent.OutputObject
   >;
   getEvent(
     key: "LossApplied"
@@ -705,18 +604,7 @@ export interface Accounting extends BaseContract {
       GainSplitEvent.OutputObject
     >;
 
-    "JuniorWethTVLSet(uint256)": TypedContractEvent<
-      JuniorWethTVLSetEvent.InputTuple,
-      JuniorWethTVLSetEvent.OutputTuple,
-      JuniorWethTVLSetEvent.OutputObject
-    >;
-    JuniorWethTVLSet: TypedContractEvent<
-      JuniorWethTVLSetEvent.InputTuple,
-      JuniorWethTVLSetEvent.OutputTuple,
-      JuniorWethTVLSetEvent.OutputObject
-    >;
-
-    "LossApplied(uint256,uint256,uint256,uint256,uint256)": TypedContractEvent<
+    "LossApplied(uint256,uint256,uint256,uint256)": TypedContractEvent<
       LossAppliedEvent.InputTuple,
       LossAppliedEvent.OutputTuple,
       LossAppliedEvent.OutputObject

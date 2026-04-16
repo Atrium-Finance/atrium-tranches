@@ -59,7 +59,6 @@ describe("Accounting — Part 1 (Views + Record)", () => {
       expect(await accounting.s_seniorTVL()).to.equal(0);
       expect(await accounting.s_mezzTVL()).to.equal(0);
       expect(await accounting.s_juniorBaseTVL()).to.equal(0);
-      expect(await accounting.s_juniorWethTVL()).to.equal(0);
       expect(await accounting.s_reserveTVL()).to.equal(0);
     });
   });
@@ -157,29 +156,6 @@ describe("Accounting — Part 1 (Views + Record)", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  setJuniorWethTVL
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe("setJuniorWethTVL", () => {
-    it("should set WETH TVL", async () => {
-      await accounting.connect(cdo).setJuniorWethTVL(100n * E18);
-      expect(await accounting.s_juniorWethTVL()).to.equal(100n * E18);
-    });
-
-    it("should overwrite previous value", async () => {
-      await accounting.connect(cdo).setJuniorWethTVL(100n * E18);
-      await accounting.connect(cdo).setJuniorWethTVL(200n * E18);
-      expect(await accounting.s_juniorWethTVL()).to.equal(200n * E18);
-    });
-
-    it("should emit JuniorWethTVLSet event", async () => {
-      await expect(accounting.connect(cdo).setJuniorWethTVL(100n * E18))
-        .to.emit(accounting, "JuniorWethTVLSet")
-        .withArgs(100n * E18);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════
   //  View functions
   // ═══════════════════════════════════════════════════════════════════
 
@@ -187,8 +163,7 @@ describe("Accounting — Part 1 (Views + Record)", () => {
     beforeEach(async () => {
       await accounting.connect(cdo).recordDeposit(SENIOR, 7_000n * E18);
       await accounting.connect(cdo).recordDeposit(MEZZ, 2_000n * E18);
-      await accounting.connect(cdo).recordDeposit(JUNIOR, 800n * E18); // base
-      await accounting.connect(cdo).setJuniorWethTVL(200n * E18);       // weth
+      await accounting.connect(cdo).recordDeposit(JUNIOR, 800n * E18);
     });
 
     it("getTrancheTVL(SENIOR) should return senior TVL", async () => {
@@ -199,27 +174,19 @@ describe("Accounting — Part 1 (Views + Record)", () => {
       expect(await accounting.getTrancheTVL(MEZZ)).to.equal(2_000n * E18);
     });
 
-    it("getTrancheTVL(JUNIOR) should return base + weth", async () => {
-      expect(await accounting.getTrancheTVL(JUNIOR)).to.equal(1_000n * E18); // 800 + 200
+    it("getTrancheTVL(JUNIOR) should return junior base TVL", async () => {
+      expect(await accounting.getTrancheTVL(JUNIOR)).to.equal(800n * E18);
     });
 
-    it("getJuniorTVL should return base + weth", async () => {
-      expect(await accounting.getJuniorTVL()).to.equal(1_000n * E18);
-    });
-
-    it("getJuniorBaseTVL should return base only", async () => {
-      expect(await accounting.getJuniorBaseTVL()).to.equal(800n * E18);
-    });
-
-    it("getJuniorWethTVL should return weth only", async () => {
-      expect(await accounting.getJuniorWethTVL()).to.equal(200n * E18);
+    it("getJuniorTVL should return junior base TVL", async () => {
+      expect(await accounting.getJuniorTVL()).to.equal(800n * E18);
     });
 
     it("getAllTVLs should return (sr, mz, jr)", async () => {
       const [sr, mz, jr] = await accounting.getAllTVLs();
       expect(sr).to.equal(7_000n * E18);
       expect(mz).to.equal(2_000n * E18);
-      expect(jr).to.equal(1_000n * E18);
+      expect(jr).to.equal(800n * E18);
     });
   });
 
@@ -243,13 +210,8 @@ describe("Accounting — Part 1 (Views + Record)", () => {
         .to.be.revertedWithCustomError(accounting, "PrimeVaults__Unauthorized");
     });
 
-    it("should revert setJuniorWethTVL from non-CDO", async () => {
-      await expect(accounting.connect(other).setJuniorWethTVL(100n * E18))
-        .to.be.revertedWithCustomError(accounting, "PrimeVaults__Unauthorized");
-    });
-
     it("should revert updateTVL from non-CDO", async () => {
-      await expect(accounting.connect(other).updateTVL(0, 0))
+      await expect(accounting.connect(other).updateTVL(0))
         .to.be.revertedWithCustomError(accounting, "PrimeVaults__Unauthorized");
     });
   });

@@ -11,8 +11,6 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ERC4626 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-
 import { IPrimeCDO, TrancheId, CooldownType, CDOWithdrawResult } from "../interfaces/IPrimeCDO.sol";
 import { IAccounting } from "../interfaces/IAccounting.sol";
 
@@ -26,7 +24,6 @@ import { IAccounting } from "../interfaces/IAccounting.sol";
  */
 contract TrancheVault is ERC4626 {
     using SafeERC20 for IERC20;
-    using Math for uint256;
 
     // ═══════════════════════════════════════════════════════════════════
     //  IMMUTABLES
@@ -34,7 +31,6 @@ contract TrancheVault is ERC4626 {
 
     IPrimeCDO public immutable i_cdo;
     TrancheId public immutable i_trancheId;
-    IERC20 public immutable i_weth;
 
     // ═══════════════════════════════════════════════════════════════════
     //  EVENTS
@@ -47,20 +43,11 @@ contract TrancheVault is ERC4626 {
         uint256 baseAmount,
         CDOWithdrawResult result
     );
-    event JuniorDeposited(
-        address indexed caller,
-        address indexed receiver,
-        uint256 baseAmount,
-        uint256 wethAmount,
-        uint256 shares
-    );
 
     // ═══════════════════════════════════════════════════════════════════
     //  ERRORS
     // ═══════════════════════════════════════════════════════════════════
 
-    error PrimeVaults__NotJunior();
-    error PrimeVaults__IsJunior();
     error PrimeVaults__UseRequestWithdraw();
     error PrimeVaults__ZeroShares();
 
@@ -72,7 +59,6 @@ contract TrancheVault is ERC4626 {
      * @param cdo_ Address of the paired PrimeCDO
      * @param trancheId_ Tranche this vault represents (SENIOR, MEZZ, or JUNIOR)
      * @param asset_ Base asset token (e.g., USDai)
-     * @param weth_ WETH token address (only used for Junior deposits)
      * @param name_ Vault share token name (e.g., "PrimeVaults Senior")
      * @param symbol_ Vault share token symbol (e.g., "pvSENIOR")
      */
@@ -80,13 +66,11 @@ contract TrancheVault is ERC4626 {
         address cdo_,
         TrancheId trancheId_,
         address asset_,
-        address weth_,
         string memory name_,
         string memory symbol_
     ) ERC20(name_, symbol_) ERC4626(IERC20(asset_)) {
         i_cdo = IPrimeCDO(cdo_);
         i_trancheId = trancheId_;
-        i_weth = IERC20(weth_);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -102,17 +86,15 @@ contract TrancheVault is ERC4626 {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  ERC-4626 OVERRIDES — deposit (Senior / Mezzanine)
+    //  ERC-4626 OVERRIDES — deposit (all tranches)
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * @notice Deposit base asset into Senior or Mezzanine tranche.
-     * @dev Junior must use depositJunior(). Overrides ERC4626.deposit to route through CDO.
+     * @notice Deposit base asset into any tranche.
+     * @dev Overrides ERC4626.deposit to route through CDO.
      *      Share price invariant: sharePrice_before == sharePrice_after (see MATH_REFERENCE §A2).
      */
     function deposit(uint256 assets, address receiver) public override returns (uint256) {
-        if (i_trancheId == TrancheId.JUNIOR) revert PrimeVaults__IsJunior();
-
         uint256 shares = previewDeposit(assets);
 
         // 1. Pull base asset from depositor to vault
@@ -131,10 +113,8 @@ contract TrancheVault is ERC4626 {
 
     /**
      * @notice Mint exact shares by depositing the required base assets.
-     * @dev Junior must use depositJunior().
      */
     function mint(uint256 shares, address receiver) public override returns (uint256) {
-        if (i_trancheId == TrancheId.JUNIOR) revert PrimeVaults__IsJunior();
 
         uint256 assets = previewMint(shares);
 
@@ -146,51 +126,6 @@ contract TrancheVault is ERC4626 {
 
         emit Deposit(_msgSender(), receiver, assets, shares);
         return assets;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  DEPOSIT — Junior (dual-asset: base + WETH)
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Deposit dual-asset (base + WETH) into Junior tranche.
-     * @dev Only callable on Junior vault. Routes through CDO.depositJunior.
-     *      Shares computed from totalBaseValue (base + WETH USD) at pre-deposit exchange rate.
-     * @param baseAmount Amount of base asset to deposit
-     * @param wethAmount Amount of WETH to deposit
-     * @param receiver Address to receive vault shares
-     * @return shares Vault shares minted
-     */
-    function depositJunior(uint256 baseAmount, uint256 wethAmount, address receiver) external returns (uint256 shares) {
-        if (i_trancheId != TrancheId.JUNIOR) revert PrimeVaults__NotJunior();
-
-        // 1. Snapshot for share calculation (before CDO modifies accounting)
-        uint256 assetsBefore = totalAssets();
-        uint256 supplyBefore = totalSupply();
-
-        // 2. Pull tokens from depositor to vault
-        if (baseAmount > 0) {
-            SafeERC20.safeTransferFrom(IERC20(asset()), _msgSender(), address(this), baseAmount);
-        }
-        if (wethAmount > 0) {
-            i_weth.safeTransferFrom(_msgSender(), address(this), wethAmount);
-        }
-
-        // 3. Approve CDO for both tokens
-        if (baseAmount > 0) IERC20(asset()).forceApprove(address(i_cdo), baseAmount);
-        if (wethAmount > 0) i_weth.forceApprove(address(i_cdo), wethAmount);
-
-        // 4. Route to CDO — returns total base-equivalent value
-        uint256 totalBaseValue = i_cdo.depositJunior(asset(), baseAmount, wethAmount, _msgSender());
-
-        // 5. Compute shares from pre-deposit snapshot (see MATH_REFERENCE §A2)
-        if (supplyBefore == 0) shares = totalBaseValue;
-        else shares = totalBaseValue.mulDiv(supplyBefore, assetsBefore, Math.Rounding.Floor);
-
-        // 6. Mint shares
-        _mint(receiver, shares);
-
-        emit JuniorDeposited(_msgSender(), receiver, baseAmount, wethAmount, shares);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -219,8 +154,7 @@ contract TrancheVault is ERC4626 {
     /**
      * @notice Request withdrawal by redeeming vault shares.
      * @dev Burns shares for NONE/ASSETS_LOCK mechanisms. Escrows shares for SHARES_LOCK.
-     *      Senior/Mezz: routes to CDO.requestWithdraw.
-     *      Junior: routes to CDO.withdrawJunior (proportional base + WETH).
+     *      All tranches route to CDO.requestWithdraw.
      *      Always withdraws the underlying yield token (sUSDai) — no outputToken selection.
      * @param shares Number of vault shares to redeem
      * @param receiver Address to receive withdrawn tokens
@@ -241,16 +175,8 @@ contract TrancheVault is ERC4626 {
         _transfer(owner, address(this), shares);
         _approve(address(this), address(i_cdo), shares);
 
-        if (i_trancheId == TrancheId.JUNIOR) {
-            // Junior: baseAmount = only base portion (exclude WETH TVL)
-            // WETH is withdrawn proportionally by CDO.withdrawJunior separately
-            uint256 juniorBaseTVL = IAccounting(i_cdo.accounting()).getJuniorBaseTVL();
-            uint256 baseAmount = supply > 0 ? (shares * juniorBaseTVL) / supply : 0;
-            result = i_cdo.withdrawJunior(baseAmount, receiver, shares, supply);
-        } else {
-            uint256 baseAmount = supply > 0 ? (shares * totalAssets()) / supply : 0;
-            result = i_cdo.requestWithdraw(i_trancheId, baseAmount, receiver, shares);
-        }
+        uint256 baseAmount = supply > 0 ? (shares * totalAssets()) / supply : 0;
+        result = i_cdo.requestWithdraw(i_trancheId, baseAmount, receiver, shares);
 
         // SHARES_LOCK (type 3): CDO already pulled shares for escrow — do NOT burn
         // All other types: CDO did not pull shares — burn them

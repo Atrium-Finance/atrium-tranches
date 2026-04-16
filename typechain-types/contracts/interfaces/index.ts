@@ -3,14 +3,10 @@
 /* eslint-disable */
 import type * as iAprPairFeedSol from "./IAprPairFeed.sol";
 export type { iAprPairFeedSol };
-export type { IAaveWETHAdapter } from "./IAaveWETHAdapter";
 export type { IAccounting } from "./IAccounting";
 export type { IAprFeed } from "./IAprFeed";
 export type { ICooldownHandler } from "./ICooldownHandler";
 export type { IPrimeCDO } from "./IPrimeCDO";
 export type { IQuoterV2 } from "./IQuoterV2";
-export type { IRatioController } from "./IRatioController";
 export type { IStrategy } from "./IStrategy";
-export type { ISwapFacility } from "./ISwapFacility";
 export type { ISwapRouter } from "./ISwapRouter";
-export type { IWETHPriceOracle } from "./IWETHPriceOracle";

@@ -11,8 +11,6 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { TrancheId } from "../interfaces/IPrimeCDO.sol";
 import { IAccounting } from "../interfaces/IAccounting.sol";
-import { IAaveWETHAdapter } from "../interfaces/IAaveWETHAdapter.sol";
-import { IWETHPriceOracle } from "../interfaces/IWETHPriceOracle.sol";
 import { ICooldownHandler, CooldownRequest, CooldownStatus } from "../interfaces/ICooldownHandler.sol";
 import { IStrategy } from "../interfaces/IStrategy.sol";
 import { RedemptionPolicy } from "../cooldown/RedemptionPolicy.sol";
@@ -23,14 +21,10 @@ import { RedemptionPolicy } from "../cooldown/RedemptionPolicy.sol";
 interface IPrimeCDOLens {
     function i_accounting() external view returns (IAccounting);
     function i_strategy() external view returns (IStrategy);
-    function i_aaveWETHAdapter() external view returns (IAaveWETHAdapter);
-    function i_wethOracle() external view returns (IWETHPriceOracle);
     function i_redemptionPolicy() external view returns (RedemptionPolicy);
     function i_erc20Cooldown() external view returns (ICooldownHandler);
     function i_sharesCooldown() external view returns (ICooldownHandler);
     function s_tranches(TrancheId id) external view returns (address);
-    function s_ratioTarget() external view returns (uint256);
-    function s_ratioTolerance() external view returns (uint256);
     function s_minCoverageForDeposit() external view returns (uint256);
     function s_juniorShortfallPausePrice() external view returns (uint256);
     function s_shortfallPaused() external view returns (bool);
@@ -51,9 +45,9 @@ interface ITrancheVaultLens {
 
 /**
  * @title PrimeLens
- * @notice Read-only aggregator for frontend. No state changes. Constructor takes all addresses.
- * @dev Aggregates data from PrimeCDO, Accounting, TrancheVaults, AaveWETHAdapter,
- *      WETHPriceOracle, RedemptionPolicy, and CooldownHandlers into convenient view functions.
+ * @notice Read-only aggregator for frontend. No state changes.
+ * @dev Aggregates data from PrimeCDO, Accounting, TrancheVaults,
+ *      RedemptionPolicy, and CooldownHandlers into convenient view functions.
  */
 contract PrimeLens {
     // ═══════════════════════════════════════════════════════════════════
@@ -69,8 +63,6 @@ contract PrimeLens {
     IPrimeCDOLens public immutable i_cdo;
     IAccounting public immutable i_accounting;
     IStrategy public immutable i_strategy;
-    IAaveWETHAdapter public immutable i_aaveAdapter;
-    IWETHPriceOracle public immutable i_wethOracle;
     RedemptionPolicy public immutable i_redemptionPolicy;
     ICooldownHandler public immutable i_erc20Cooldown;
     ICooldownHandler public immutable i_sharesCooldown;
@@ -90,16 +82,7 @@ contract PrimeLens {
         uint256 totalAssets;
         uint256 totalSupply;
         uint256 sharePrice; // 18 decimals (1e18 = 1:1)
-    }
-
-    struct JuniorPosition {
-        uint256 baseTVL;
-        uint256 wethTVL;
-        uint256 totalTVL;
-        uint256 wethAmount; // in WETH (not USD)
-        uint256 wethPrice; // 18 decimals
-        uint256 currentRatio; // 18 decimals (0.20e18 = 20%)
-        uint256 aaveAPR;
+        uint256 apr; // 18 decimals
     }
 
     struct ProtocolHealth {
@@ -135,18 +118,6 @@ contract PrimeLens {
         uint256 coverageMezz;
     }
 
-    struct RebalanceStatus {
-        uint256 currentRatio; // 18 decimals
-        uint256 targetRatio;
-        uint256 tolerance;
-        uint256 wethAmount; // in WETH
-        uint256 wethValueUSD;
-        uint256 wethPrice;
-        bool needsSell; // ratio > target + tolerance
-        bool needsBuy; // ratio < target - tolerance
-        uint256 excessOrDeficitUSD; // how much to sell/buy
-    }
-
     // ═══════════════════════════════════════════════════════════════════
     //  CONSTRUCTOR
     // ═══════════════════════════════════════════════════════════════════
@@ -160,8 +131,6 @@ contract PrimeLens {
         i_cdo = IPrimeCDOLens(cdo_);
         i_accounting = IPrimeCDOLens(cdo_).i_accounting();
         i_strategy = IPrimeCDOLens(cdo_).i_strategy();
-        i_aaveAdapter = IPrimeCDOLens(cdo_).i_aaveWETHAdapter();
-        i_wethOracle = IPrimeCDOLens(cdo_).i_wethOracle();
         i_redemptionPolicy = IPrimeCDOLens(cdo_).i_redemptionPolicy();
         i_erc20Cooldown = IPrimeCDOLens(cdo_).i_erc20Cooldown();
         i_sharesCooldown = IPrimeCDOLens(cdo_).i_sharesCooldown();
@@ -181,17 +150,7 @@ contract PrimeLens {
      */
     function getTrancheInfo(TrancheId tranche) external view returns (TrancheInfo memory info) {
         address vault = _getVault(tranche);
-        ITrancheVaultLens v = ITrancheVaultLens(vault);
-
-        info.trancheId = tranche;
-        info.vault = vault;
-        info.name = v.name();
-        info.symbol = v.symbol();
-        info.totalAssets = v.totalAssets();
-        info.totalSupply = v.totalSupply();
-        info.sharePrice = info.totalSupply > 0
-            ? (info.totalAssets * PRECISION) / info.totalSupply
-            : PRECISION;
+        info = _buildTrancheInfo(tranche, vault);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -212,24 +171,6 @@ contract PrimeLens {
         senior = _buildTrancheInfo(TrancheId.SENIOR, i_seniorVault);
         mezz = _buildTrancheInfo(TrancheId.MEZZ, i_mezzVault);
         junior = _buildTrancheInfo(TrancheId.JUNIOR, i_juniorVault);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  VIEW — getJuniorPosition
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Get Junior tranche dual-asset position details.
-     * @return pos Struct with base/WETH split, ratio, Aave APR
-     */
-    function getJuniorPosition() external view returns (JuniorPosition memory pos) {
-        pos.baseTVL = i_accounting.getJuniorBaseTVL();
-        pos.wethTVL = i_accounting.getJuniorWethTVL();
-        pos.totalTVL = pos.baseTVL + pos.wethTVL;
-        pos.wethAmount = i_aaveAdapter.totalAssets();
-        pos.wethPrice = i_wethOracle.getSpotPrice();
-        pos.currentRatio = pos.totalTVL > 0 ? (pos.wethTVL * PRECISION) / pos.totalTVL : 0;
-        pos.aaveAPR = i_aaveAdapter.currentAPR();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -339,38 +280,6 @@ contract PrimeLens {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  VIEW — getWETHRebalanceStatus
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Get WETH rebalance status — whether sell or buy is needed and by how much.
-     * @return status Struct with ratio, target, tolerance, and sell/buy signals
-     */
-    function getWETHRebalanceStatus() external view returns (RebalanceStatus memory status) {
-        status.wethAmount = i_aaveAdapter.totalAssets();
-        status.wethPrice = i_wethOracle.getSpotPrice();
-        status.wethValueUSD = (status.wethAmount * status.wethPrice) / PRECISION;
-        status.targetRatio = i_cdo.s_ratioTarget();
-        status.tolerance = i_cdo.s_ratioTolerance();
-
-        uint256 juniorTVL = i_accounting.getJuniorTVL();
-
-        if (juniorTVL > 0) {
-            status.currentRatio = (status.wethValueUSD * PRECISION) / juniorTVL;
-
-            uint256 targetWethUSD = (status.targetRatio * juniorTVL) / PRECISION;
-
-            if (status.currentRatio > status.targetRatio + status.tolerance) {
-                status.needsSell = true;
-                status.excessOrDeficitUSD = status.wethValueUSD - targetWethUSD;
-            } else if (status.currentRatio < status.targetRatio - status.tolerance) {
-                status.needsBuy = true;
-                status.excessOrDeficitUSD = targetWethUSD - status.wethValueUSD;
-            }
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
     //  INTERNAL
     // ═══════════════════════════════════════════════════════════════════
 
@@ -391,6 +300,13 @@ contract PrimeLens {
         info.sharePrice = info.totalSupply > 0
             ? (info.totalAssets * PRECISION) / info.totalSupply
             : PRECISION;
+        info.apr = _getAPR(tranche);
+    }
+
+    function _getAPR(TrancheId tranche) internal view returns (uint256) {
+        if (tranche == TrancheId.SENIOR) return i_accounting.getSeniorAPR();
+        if (tranche == TrancheId.MEZZ) return i_accounting.getMezzAPR();
+        return i_accounting.getJuniorAPR();
     }
 
     function _buildPendingWithdraw(

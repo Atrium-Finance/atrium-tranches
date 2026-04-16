@@ -3,4 +3,6 @@
 /* eslint-disable */
 import type * as implementations from "./implementations";
 export type { implementations };
+import type * as usdai from "./usdai";
+export type { usdai };
 export type { BaseStrategy } from "./BaseStrategy";

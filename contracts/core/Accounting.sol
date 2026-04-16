@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 // ══════════════════════════════════════════════════════════════════════
 //  PRIMEVAULTS V3 — Accounting
-//  Dual-asset TVL tracking, gain splitting, and loss waterfall
+//  TVL tracking, gain splitting, and loss waterfall
 //  See: docs/PV_V3_FINAL_v34.md section 17
 // ══════════════════════════════════════════════════════════════════════
 
@@ -16,9 +16,9 @@ import { FixedPointMath } from "../libraries/FixedPointMath.sol";
 /**
  * @title Accounting
  * @notice Tracks per-tranche TVL for a single PrimeVaults market.
- * @dev Dual-asset: Senior + Mezzanine + Junior (base + WETH) + Reserve.
- *      Gain splitting: Senior gets target APR, Junior gets residual.
- *      Loss waterfall: WETH cover → Junior base → Mezzanine → Senior.
+ * @dev Senior + Mezzanine + Junior + Reserve. All tranches are base-asset only.
+ *      Gain splitting: Senior gets target APR, Mezz gets MAX(floor, subPoolAPY*(1-RP2)), Junior gets residual.
+ *      Loss waterfall: Junior → Mezzanine → Senior.
  *      See MATH_REFERENCE §C1-C4 for gain splitting, §D1-D4 for loss waterfall.
  */
 contract Accounting is IAccounting {
@@ -46,7 +46,6 @@ contract Accounting is IAccounting {
     uint256 public s_seniorTVL;
     uint256 public s_mezzTVL;
     uint256 public s_juniorBaseTVL;
-    uint256 public s_juniorWethTVL;
     uint256 public s_reserveTVL;
     uint256 public s_lastUpdateTimestamp;
     uint256 public s_srtTargetIndex;
@@ -62,9 +61,8 @@ contract Accounting is IAccounting {
     event DepositRecorded(TrancheId indexed tranche, uint256 amount);
     event WithdrawRecorded(TrancheId indexed tranche, uint256 amount);
     event FeeRecorded(TrancheId indexed tranche, uint256 feeAmount);
-    event JuniorWethTVLSet(uint256 wethValueUSD);
     event GainSplit(uint256 netGain, uint256 seniorGain, uint256 mezzGain, uint256 juniorGain, uint256 reserveCut);
-    event LossApplied(uint256 loss, uint256 wethAbsorbed, uint256 jrAbsorbed, uint256 mzAbsorbed, uint256 srAbsorbed);
+    event LossApplied(uint256 loss, uint256 jrAbsorbed, uint256 mzAbsorbed, uint256 srAbsorbed);
 
     // ═══════════════════════════════════════════════════════════════════
     //  ERRORS
@@ -118,39 +116,29 @@ contract Accounting is IAccounting {
     /**
      * @notice Update TVLs: detect gain/loss from strategy, split gains or apply loss waterfall.
      * @dev See MATH_REFERENCE §C1-C5 for gain splitting, §D4 for loss waterfall.
-     *      Called by PrimeCDO at the start of every deposit/withdraw/rebalance.
-     *      On loss: returns wethCoverageUSD so PrimeCDO can execute the actual WETH sell + restake.
+     *      Called by PrimeCDO at the start of every deposit/withdraw.
      * @param currentStrategyTVL Strategy.totalAssets() — current base value in strategy
-     * @param currentWethValueUSD AaveWETHAdapter.totalAssetsUSD() — WETH buffer in USD
-     * @return wethCoverageUSD Amount of WETH (in USD) that Layer 0 absorbed. PrimeCDO must sell
-     *         this WETH and deposit proceeds into strategy. 0 if no loss or no WETH coverage needed.
      */
-    function updateTVL(
-        uint256 currentStrategyTVL,
-        uint256 currentWethValueUSD
-    ) external override onlyCDO returns (uint256 wethCoverageUSD) {
-        // Update WETH TVL (independent of gain splitting)
-        s_juniorWethTVL = currentWethValueUSD;
-
+    function updateTVL(uint256 currentStrategyTVL) external override onlyCDO {
         // C1: Strategy gain = current - previous tracked strategy TVL
         uint256 prevStrategyTVL = s_seniorTVL + s_mezzTVL + s_juniorBaseTVL + s_reserveTVL;
 
         if (prevStrategyTVL == 0) {
             s_lastUpdateTimestamp = block.timestamp;
-            return 0;
+            return;
         }
 
         uint256 deltaT = block.timestamp - s_lastUpdateTimestamp;
-        if (deltaT == 0) return 0;
+        if (deltaT == 0) return;
 
         if (currentStrategyTVL >= prevStrategyTVL) {
             // Gain path (C2-C5)
             uint256 strategyGain = currentStrategyTVL - prevStrategyTVL;
             _splitGain(strategyGain, deltaT);
         } else {
-            // Loss path (D4) — 4-layer waterfall including WETH (Layer 0)
+            // Loss path (D4) — 3-layer waterfall: Junior → Mezz → Senior
             uint256 loss = prevStrategyTVL - currentStrategyTVL;
-            wethCoverageUSD = _applyLossWaterfall(loss);
+            _applyLossWaterfall(loss);
         }
 
         s_lastUpdateTimestamp = block.timestamp;
@@ -179,40 +167,6 @@ contract Accounting is IAccounting {
         emit FeeRecorded(id, feeAmount);
     }
 
-    /** @notice Directly set Junior WETH TVL (USD value). */
-    function setJuniorWethTVL(uint256 wethValueUSD) external override onlyCDO {
-        s_juniorWethTVL = wethValueUSD;
-        emit JuniorWethTVLSet(wethValueUSD);
-    }
-
-    /**
-     * @notice Apply slippage loss from WETH swap to base asset waterfall (Layer 1-3 only).
-     * @dev Called by PrimeCDO when WETH swap output < oracle-valued coverageUSD.
-     *      WETH (Layer 0) already absorbed — this handles the slippage delta immediately.
-     * @param slippageLoss Shortfall amount (coverageUSD - baseRecovered)
-     */
-    function applySlippageLoss(uint256 slippageLoss) external override onlyCDO {
-        if (slippageLoss == 0) return;
-
-        uint256 remaining = slippageLoss;
-
-        // Layer 1: Junior base
-        uint256 jrAbsorbed = remaining > s_juniorBaseTVL ? s_juniorBaseTVL : remaining;
-        s_juniorBaseTVL -= jrAbsorbed;
-        remaining -= jrAbsorbed;
-
-        // Layer 2: Mezzanine
-        uint256 mzAbsorbed = remaining > s_mezzTVL ? s_mezzTVL : remaining;
-        s_mezzTVL -= mzAbsorbed;
-        remaining -= mzAbsorbed;
-
-        // Layer 3: Senior
-        uint256 srAbsorbed = remaining > s_seniorTVL ? s_seniorTVL : remaining;
-        s_seniorTVL -= srAbsorbed;
-
-        emit LossApplied(slippageLoss, 0, jrAbsorbed, mzAbsorbed, srAbsorbed);
-    }
-
     /** @notice Claim accumulated reserve. Resets s_reserveTVL to 0. */
     function claimReserve() external override onlyCDO returns (uint256 amount) {
         amount = s_reserveTVL;
@@ -223,34 +177,24 @@ contract Accounting is IAccounting {
     //  VIEW
     // ═══════════════════════════════════════════════════════════════════
 
-    /** @notice Get TVL for a specific tranche. Junior returns base + WETH. */
+    /** @notice Get TVL for a specific tranche. */
     function getTrancheTVL(TrancheId id) external view override returns (uint256) {
         if (id == TrancheId.SENIOR) return s_seniorTVL;
         if (id == TrancheId.MEZZ) return s_mezzTVL;
-        if (id == TrancheId.JUNIOR) return s_juniorBaseTVL + s_juniorWethTVL;
+        if (id == TrancheId.JUNIOR) return s_juniorBaseTVL;
         revert PrimeVaults__InvalidTrancheId();
     }
 
-    /** @notice Get total Junior TVL (base + WETH). */
+    /** @notice Get Junior TVL. */
     function getJuniorTVL() external view override returns (uint256) {
-        return s_juniorBaseTVL + s_juniorWethTVL;
-    }
-
-    /** @notice Get Junior base asset TVL only. */
-    function getJuniorBaseTVL() external view override returns (uint256) {
         return s_juniorBaseTVL;
-    }
-
-    /** @notice Get Junior WETH buffer TVL in USD. */
-    function getJuniorWethTVL() external view override returns (uint256) {
-        return s_juniorWethTVL;
     }
 
     /** @notice Get TVL for all three tranches. */
     function getAllTVLs() external view override returns (uint256 sr, uint256 mz, uint256 jr) {
         sr = s_seniorTVL;
         mz = s_mezzTVL;
-        jr = s_juniorBaseTVL + s_juniorWethTVL;
+        jr = s_juniorBaseTVL;
     }
 
     /**
@@ -263,20 +207,19 @@ contract Accounting is IAccounting {
 
     /**
      * @notice Compute current Mezzanine APR using APR feed + risk premiums.
-     * @dev APR_mz = aprBase × (1 + RP1 × subLeverage) × (1 - RP2). See MATH_REFERENCE §E6.
+     * @dev APR_mz = MAX(aprBase, subPoolAPY × (1 - RP2)). See MATH_REFERENCE §E6.
      */
-    function getMezzAPR() external view returns (uint256) {
+    function getMezzAPR() external view override returns (uint256) {
         return _computeMezzAPR();
     }
 
     /**
-     * @notice Compute Junior strategy residual APR (excludes Aave WETH yield).
+     * @notice Compute Junior residual APR.
      * @dev Junior gets the residual after Senior and Mezzanine target claims.
-     *      Full Junior APR = getJuniorAPR() + aaveAPR × wethRatio (computed off-chain or in PrimeLens).
      *      See MATH_REFERENCE §C5.
-     * @return Junior strategy residual APR as 18-decimal fixed-point
+     * @return Junior residual APR as 18-decimal fixed-point
      */
-    function getJuniorAPR() external view returns (uint256) {
+    function getJuniorAPR() external view override returns (uint256) {
         return _computeJuniorAPR();
     }
 
@@ -287,6 +230,8 @@ contract Accounting is IAccounting {
     /**
      * @dev Split positive strategy gain across tranches. See MATH_REFERENCE §C2-C5.
      *      Priority: reserve cut → Senior target → Mezz target → Junior residual.
+     *      If yield insufficient for Senior + Mezz targets, the deficit is applied
+     *      via the loss waterfall (Junior → Mezz → Senior).
      */
     function _splitGain(uint256 strategyGain, uint256 deltaT) internal {
         // C2: Reserve cut (only on positive gains)
@@ -315,35 +260,25 @@ contract Accounting is IAccounting {
             s_mzTargetIndex = (s_mzTargetIndex * (PRECISION + interestFactor)) / PRECISION;
         }
 
-        // C5: Distribute gain (4 cases)
-        uint256 seniorGain;
-        uint256 mezzGain;
-        uint256 juniorGain;
-
+        // C5: Senior + Mezz always receive their full target.
+        // If yield insufficient, the deficit hits the loss waterfall.
         uint256 totalTarget = seniorGainTarget + mezzGainTarget;
 
+        // Always credit full targets
+        s_seniorTVL += seniorGainTarget;
+        s_mezzTVL += mezzGainTarget;
+
         if (netGain >= totalTarget) {
-            // CASE A: yield sufficient for all
-            seniorGain = seniorGainTarget;
-            mezzGain = mezzGainTarget;
-            juniorGain = netGain - totalTarget;
-        } else if (netGain >= seniorGainTarget) {
-            // CASE B: yield sufficient for Senior, partial Mezz
-            seniorGain = seniorGainTarget;
-            mezzGain = netGain - seniorGainTarget;
-            juniorGain = 0;
+            // CASE A: yield sufficient — Junior gets the residual
+            uint256 juniorGain = netGain - totalTarget;
+            s_juniorBaseTVL += juniorGain;
+            emit GainSplit(netGain, seniorGainTarget, mezzGainTarget, juniorGain, reserveCut);
         } else {
-            // CASE C: yield insufficient even for Senior
-            seniorGain = netGain;
-            mezzGain = 0;
-            juniorGain = 0;
+            // CASE B: yield insufficient — deficit applied via loss waterfall
+            uint256 deficit = totalTarget - netGain;
+            _applyLossWaterfall(deficit);
+            emit GainSplit(netGain, seniorGainTarget, mezzGainTarget, 0, reserveCut);
         }
-
-        s_seniorTVL += seniorGain;
-        s_mezzTVL += mezzGain;
-        s_juniorBaseTVL += juniorGain;
-
-        emit GainSplit(netGain, seniorGain, mezzGain, juniorGain, reserveCut);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -351,23 +286,15 @@ contract Accounting is IAccounting {
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * @dev Apply 4-layer loss waterfall. See MATH_REFERENCE §D4.
-     *      Layer 0: WETH buffer (deducted from s_juniorWethTVL, returned for PrimeCDO to sell + restake)
-     *      Layer 1: Junior base (first loss on base assets)
+     * @dev Apply 3-layer loss waterfall. See MATH_REFERENCE §D4.
+     *      Layer 1: Junior (first loss)
      *      Layer 2: Mezzanine
      *      Layer 3: Senior (last resort)
-     * @return wethAbsorbed USD value of WETH that Layer 0 absorbed. Caller must sell WETH and deposit
-     *         proceeds into strategy. Slippage delta becomes loss in the next updateTVL cycle.
      */
-    function _applyLossWaterfall(uint256 loss) internal returns (uint256 wethAbsorbed) {
+    function _applyLossWaterfall(uint256 loss) internal {
         uint256 remaining = loss;
 
-        // Layer 0: WETH buffer (first line of defense)
-        wethAbsorbed = remaining > s_juniorWethTVL ? s_juniorWethTVL : remaining;
-        s_juniorWethTVL -= wethAbsorbed;
-        remaining -= wethAbsorbed;
-
-        // Layer 1: Junior base (first loss on base assets)
+        // Layer 1: Junior (first loss)
         uint256 jrAbsorbed = remaining > s_juniorBaseTVL ? s_juniorBaseTVL : remaining;
         s_juniorBaseTVL -= jrAbsorbed;
         remaining -= jrAbsorbed;
@@ -381,7 +308,7 @@ contract Accounting is IAccounting {
         uint256 srAbsorbed = remaining > s_seniorTVL ? s_seniorTVL : remaining;
         s_seniorTVL -= srAbsorbed;
 
-        emit LossApplied(loss, wethAbsorbed, jrAbsorbed, mzAbsorbed, srAbsorbed);
+        emit LossApplied(loss, jrAbsorbed, mzAbsorbed, srAbsorbed);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -401,7 +328,7 @@ contract Accounting is IAccounting {
      *      ratio_sr = TVL_sr / Pool_TVL
      */
     function _computeRP1() internal view returns (uint256) {
-        uint256 pool = s_seniorTVL + s_mezzTVL + s_juniorBaseTVL + s_juniorWethTVL;
+        uint256 pool = s_seniorTVL + s_mezzTVL + s_juniorBaseTVL;
         if (pool == 0 || s_seniorTVL == 0) return 0;
 
         uint256 ratioSr = s_seniorTVL.fpDiv(pool);
@@ -416,8 +343,7 @@ contract Accounting is IAccounting {
      *      ratio_mz_sub = TVL_mz / (TVL_mz + Jr)
      */
     function _computeRP2() internal view returns (uint256) {
-        uint256 jr = s_juniorBaseTVL + s_juniorWethTVL;
-        uint256 mzPlusJr = s_mezzTVL + jr;
+        uint256 mzPlusJr = s_mezzTVL + s_juniorBaseTVL;
         if (mzPlusJr == 0) return 0;
 
         uint256 ratioMzSub = s_mezzTVL.fpDiv(mzPlusJr);
@@ -429,46 +355,40 @@ contract Accounting is IAccounting {
 
     /**
      * @dev Read APR pair from feed. Returns (0, 0) if feed is not a contract or call fails.
+     * @return aaveBenchmarkAPR Aave weighted-average supply rate (used as floor for Senior & Mezz)
+     * @return strategyAPR Actual sUSDai yield rate (used as base APY for gain splitting)
      */
-    function _getAprPair() internal view returns (uint256 aprTarget, uint256 aprStrategy) {
+    function _getAprPair() internal view returns (uint256 aaveBenchmarkAPR, uint256 strategyAPR) {
         address feed = address(i_aprFeed);
         if (feed == address(0) || feed.code.length == 0) return (0, 0);
         try i_aprFeed.latestRoundData() returns (IAprPairFeed.TRound memory round) {
-            aprTarget = _aprTo18Dec(round.aprTarget);
-            aprStrategy = _aprTo18Dec(round.aprBase);
+            aaveBenchmarkAPR = _aprTo18Dec(round.aprTarget);
+            strategyAPR = _aprTo18Dec(round.aprBase);
         } catch {
             return (0, 0);
         }
     }
 
     /**
-     * @dev Compute diluted base APY. See MATH_REFERENCE §E0.
-     *      APY_base = APY_strategy × Strategy_TVL / Pool_TVL
-     *      Strategy only earns on base assets (not WETH), so dilute across full pool.
+     * @dev Base APY = strategy APR (no dilution — all tranches are base-asset only).
      */
     function _computeBaseAPY() internal view returns (uint256) {
-        (, uint256 aprStrategy) = _getAprPair();
-        if (aprStrategy == 0) return 0;
-
-        uint256 strategyTVL = s_seniorTVL + s_mezzTVL + s_juniorBaseTVL;
-        uint256 poolTVL = strategyTVL + s_juniorWethTVL;
-        if (poolTVL == 0) return 0;
-
-        return aprStrategy.fpMul(strategyTVL).fpDiv(poolTVL);
+        (, uint256 strategyAPR) = _getAprPair();
+        return strategyAPR;
     }
 
     /**
-     * @dev APR_sr = MAX(Floor, APY_base × (1 - RP1)). See MATH_REFERENCE §E4.
+     * @dev APR_sr = MAX(aaveBenchmark, baseAPY × (1 - RP1)). See MATH_REFERENCE §E4.
      */
     function _computeSeniorAPR() internal view returns (uint256) {
-        (uint256 aprFloor, ) = _getAprPair();
+        (uint256 aaveBenchmarkAPR, ) = _getAprPair();
         uint256 apyBase = _computeBaseAPY();
 
         uint256 rp1 = _computeRP1();
 
         uint256 aprSr = rp1 < PRECISION ? apyBase.fpMul(PRECISION - rp1) : 0;
 
-        return aprSr > aprFloor ? aprSr : aprFloor;
+        return aprSr > aaveBenchmarkAPR ? aprSr : aaveBenchmarkAPR;
     }
 
     /**
@@ -480,8 +400,7 @@ contract Accounting is IAccounting {
         uint256 apyBase = _computeBaseAPY();
         uint256 aprSr = _computeSeniorAPR();
 
-        uint256 jr = s_juniorBaseTVL + s_juniorWethTVL;
-        uint256 mzPlusJr = s_mezzTVL + jr;
+        uint256 mzPlusJr = s_mezzTVL + s_juniorBaseTVL;
         if (mzPlusJr == 0) return 0;
 
         uint256 leverage = s_seniorTVL > 0 ? s_seniorTVL.fpDiv(mzPlusJr) : 0;
@@ -499,27 +418,30 @@ contract Accounting is IAccounting {
     }
 
     /**
-     * @dev APY_mz = APY_sub × (1 - RP2). See MATH_REFERENCE §E7.
-     *      v3.6 formula: correctly distributes floor cost across Mezz + Junior via APY_sub.
+     * @dev APY_mz = MAX(aaveBenchmark, APY_sub × (1 - RP2)). See MATH_REFERENCE §E7.
+     *      Floor = Aave benchmark rate from AprPairFeed.
      */
     function _computeMezzAPR() internal view returns (uint256) {
+        (uint256 aaveBenchmarkAPR, ) = _getAprPair();
+
         uint256 apySub = _computeSubPoolAPY();
-        if (apySub == 0) return 0;
 
-        uint256 rp2 = _computeRP2();
-        if (rp2 >= PRECISION) return 0;
+        uint256 aprMz;
+        if (apySub > 0) {
+            uint256 rp2 = _computeRP2();
+            aprMz = rp2 < PRECISION ? apySub.fpMul(PRECISION - rp2) : 0;
+        }
 
-        return apySub.fpMul(PRECISION - rp2);
+        return aprMz > aaveBenchmarkAPR ? aprMz : aaveBenchmarkAPR;
     }
 
     /**
-     * @dev Compute Junior APY (strategy residual, excludes Aave WETH yield).
+     * @dev Compute Junior APY (residual after Senior + Mezz).
      *      APY_jr = APY_sub + (APY_sub - APY_mz) × TVL_mz / Jr
-     *      See MATH_REFERENCE §E8. Jr includes WETH (dual-asset).
+     *      See MATH_REFERENCE §E8.
      */
     function _computeJuniorAPR() internal view returns (uint256) {
-        uint256 jr = s_juniorBaseTVL + s_juniorWethTVL;
-        if (jr == 0) return 0;
+        if (s_juniorBaseTVL == 0) return 0;
 
         uint256 apySub = _computeSubPoolAPY();
         if (apySub == 0) return 0;
@@ -529,7 +451,7 @@ contract Accounting is IAccounting {
         // APY_jr = APY_sub + (APY_sub - APY_mz) × TVL_mz / Jr
         if (s_mezzTVL == 0) return apySub;
 
-        uint256 mezzLeverage = s_mezzTVL.fpDiv(jr);
+        uint256 mezzLeverage = s_mezzTVL.fpDiv(s_juniorBaseTVL);
 
         if (apySub >= apyMz) {
             uint256 bonus = (apySub - apyMz).fpMul(mezzLeverage);

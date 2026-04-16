@@ -11,8 +11,6 @@ describe("PrimeLens — Read-only aggregator", () => {
   let cdo: any;
   let accounting: any;
   let strategy: any;
-  let adapter: any;
-  let oracle: any;
   let redemptionPolicy: any;
   let erc20Cooldown: any;
   let sharesCooldown: any;
@@ -20,16 +18,12 @@ describe("PrimeLens — Read-only aggregator", () => {
   let mezzVault: any;
   let juniorVault: any;
   let mockUSDai: any;
-  let mockWeth: any;
-  let mockPool: any;
 
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
 
   const E18 = 10n ** 18n;
-  const E8 = 10n ** 8n;
-  const ETH_PRICE = 3000n * E8;
   const DAY = 86400;
 
   async function seedTVL(tranche: number, amount: bigint) {
@@ -40,35 +34,12 @@ describe("PrimeLens — Read-only aggregator", () => {
     await mockUSDai.mint(await strategy.getAddress(), amount);
   }
 
-  async function seedWETHInAave(amount: bigint) {
-    const cdoAddr = await cdo.getAddress();
-    await mockWeth.mint(cdoAddr, amount);
-    await ethers.provider.send("hardhat_setBalance", [cdoAddr, "0x56BC75E2D63100000"]);
-    const cdoSigner = await ethers.getImpersonatedSigner(cdoAddr);
-    await mockWeth.connect(cdoSigner).approve(await adapter.getAddress(), amount);
-    await adapter.connect(cdoSigner).supply(amount);
-    await accounting.connect(cdoSigner).setJuniorWethTVL(await adapter.totalAssetsUSD());
-  }
-
   beforeEach(async () => {
     [owner, alice, bob] = await ethers.getSigners();
 
     // --- Tokens ---
     const BaseFactory = await ethers.getContractFactory("MockBaseAsset");
     mockUSDai = await BaseFactory.deploy("USDai", "USDai");
-    const WethFactory = await ethers.getContractFactory("MockWETH");
-    mockWeth = await WethFactory.deploy();
-
-    // --- Oracle ---
-    const FeedFactory = await ethers.getContractFactory("MockChainlinkFeed");
-    const mockFeed = await FeedFactory.deploy(8, ETH_PRICE);
-    const OracleFactory = await ethers.getContractFactory("WETHPriceOracle");
-    oracle = await OracleFactory.deploy(await mockFeed.getAddress());
-    await oracle.recordPrice();
-
-    // --- Aave mock ---
-    const PoolFactory = await ethers.getContractFactory("MockAavePoolForAdapter");
-    mockPool = await PoolFactory.deploy(await mockWeth.getAddress());
 
     // --- Accounting ---
     const RiskFactory = await ethers.getContractFactory("RiskParams");
@@ -78,32 +49,24 @@ describe("PrimeLens — Read-only aggregator", () => {
 
     // --- Cooldown handlers ---
     const EC20Factory = await ethers.getContractFactory("ERC20Cooldown");
-    erc20Cooldown = await EC20Factory.deploy(owner.address, 3 * DAY, 3 * DAY);
+    erc20Cooldown = await EC20Factory.deploy(owner.address);
     const SCFactory = await ethers.getContractFactory("SharesCooldown");
-    sharesCooldown = await SCFactory.deploy(owner.address, 7 * DAY);
+    sharesCooldown = await SCFactory.deploy(owner.address);
 
     // --- RedemptionPolicy ---
     const RPFactory = await ethers.getContractFactory("RedemptionPolicy");
     redemptionPolicy = await RPFactory.deploy(owner.address, await accounting.getAddress());
 
-    // --- Predict CDO address: Strategy(+0), Adapter(+1), CDO(+2) ---
+    // --- Predict CDO address: Strategy(+0), CDO(+1) ---
     const nonceBefore = await ethers.provider.getTransactionCount(owner.address);
-    const predictedCDO = ethers.getCreateAddress({ from: owner.address, nonce: nonceBefore + 2 });
+    const predictedCDO = ethers.getCreateAddress({ from: owner.address, nonce: nonceBefore + 1 });
 
     const StratFactory = await ethers.getContractFactory("MockStrategy");
     strategy = await StratFactory.deploy(predictedCDO, await mockUSDai.getAddress());
 
-    const AdapterFactory = await ethers.getContractFactory("AaveWETHAdapter");
-    adapter = await AdapterFactory.deploy(
-      await mockPool.getAddress(), await mockWeth.getAddress(),
-      await oracle.getAddress(), predictedCDO,
-    );
-
     const CDOFactory = await ethers.getContractFactory("PrimeCDO");
     cdo = await CDOFactory.deploy(
       await accounting.getAddress(), await strategy.getAddress(),
-      await adapter.getAddress(), await oracle.getAddress(), ethers.ZeroAddress,
-      await mockWeth.getAddress(),
       await redemptionPolicy.getAddress(), await erc20Cooldown.getAddress(),
       await sharesCooldown.getAddress(), ethers.ZeroAddress, owner.address,
     );
@@ -112,15 +75,15 @@ describe("PrimeLens — Read-only aggregator", () => {
     const VaultFactory = await ethers.getContractFactory("TrancheVault");
     seniorVault = await VaultFactory.deploy(
       await cdo.getAddress(), SENIOR, await mockUSDai.getAddress(),
-      await mockWeth.getAddress(), "PrimeVaults Senior", "pvSENIOR",
+      "PrimeVaults Senior", "pvSENIOR",
     );
     mezzVault = await VaultFactory.deploy(
       await cdo.getAddress(), MEZZ, await mockUSDai.getAddress(),
-      await mockWeth.getAddress(), "PrimeVaults Mezzanine", "pvMEZZ",
+      "PrimeVaults Mezzanine", "pvMEZZ",
     );
     juniorVault = await VaultFactory.deploy(
       await cdo.getAddress(), JUNIOR, await mockUSDai.getAddress(),
-      await mockWeth.getAddress(), "PrimeVaults Junior", "pvJUNIOR",
+      "PrimeVaults Junior", "pvJUNIOR",
     );
 
     // --- Wire up ---
@@ -201,39 +164,6 @@ describe("PrimeLens — Read-only aggregator", () => {
       expect(mz.totalAssets).to.equal(20_000n * E18);
       expect(jr.name).to.equal("PrimeVaults Junior");
       expect(jr.totalAssets).to.equal(100_000n * E18);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  getJuniorPosition
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe("getJuniorPosition", () => {
-    it("should return base/WETH split and ratio", async () => {
-      // Jr base=100K already seeded. Add 10 WETH ($30K)
-      await seedWETHInAave(10n * E18);
-
-      const pos = await lens.getJuniorPosition();
-      expect(pos.baseTVL).to.equal(100_000n * E18);
-      expect(pos.wethTVL).to.be.gt(0n); // $30K in WETH
-      expect(pos.totalTVL).to.equal(pos.baseTVL + pos.wethTVL);
-      expect(pos.wethAmount).to.equal(10n * E18);
-      expect(pos.currentRatio).to.be.gt(0n);
-      // Ratio ≈ 30K / 130K ≈ 0.23 (23%)
-      expect(pos.currentRatio).to.be.gte(22n * E18 / 100n);
-      expect(pos.currentRatio).to.be.lte(24n * E18 / 100n);
-    });
-
-    it("should return 0 ratio when Junior TVL is 0", async () => {
-      // Withdraw all Junior TVL
-      const cdoAddr = await cdo.getAddress();
-      await ethers.provider.send("hardhat_setBalance", [cdoAddr, "0x56BC75E2D63100000"]);
-      const cdoSigner = await ethers.getImpersonatedSigner(cdoAddr);
-      await accounting.connect(cdoSigner).recordWithdraw(JUNIOR, 100_000n * E18);
-
-      const pos = await lens.getJuniorPosition();
-      expect(pos.totalTVL).to.equal(0n);
-      expect(pos.currentRatio).to.equal(0n);
     });
   });
 
@@ -333,53 +263,4 @@ describe("PrimeLens — Read-only aggregator", () => {
     });
   });
 
-  // ═══════════════════════════════════════════════════════════════════
-  //  getWETHRebalanceStatus
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe("getWETHRebalanceStatus", () => {
-    it("should indicate needsSell when ratio > target + tolerance", async () => {
-      // Jr base=100K, WETH=20 ETH ($60K), total=160K, ratio=60/160=37.5% > 22%
-      await seedWETHInAave(20n * E18);
-
-      const status = await lens.getWETHRebalanceStatus();
-      expect(status.needsSell).to.be.true;
-      expect(status.needsBuy).to.be.false;
-      expect(status.excessOrDeficitUSD).to.be.gt(0n);
-      expect(status.targetRatio).to.equal(2n * E18 / 10n); // 0.20e18
-      expect(status.tolerance).to.equal(2n * E18 / 100n); // 0.02e18
-    });
-
-    it("should indicate needsBuy when ratio < target - tolerance", async () => {
-      // Jr base=100K, WETH=0.5 ETH ($1500), total≈101.5K, ratio≈1.5% < 18%
-      await seedWETHInAave(5n * E18 / 10n);
-
-      const status = await lens.getWETHRebalanceStatus();
-      expect(status.needsBuy).to.be.true;
-      expect(status.needsSell).to.be.false;
-      expect(status.excessOrDeficitUSD).to.be.gt(0n);
-    });
-
-    it("should indicate neither when ratio is within bounds", async () => {
-      // Jr base=100K, need WETH ratio ≈ 20%. Target WETH USD = 25K → ~8.33 ETH
-      // With 100K base + 25K WETH = 125K total, ratio = 25/125 = 20%
-      await seedWETHInAave(833n * E18 / 100n); // ~8.33 WETH
-
-      const status = await lens.getWETHRebalanceStatus();
-      expect(status.needsSell).to.be.false;
-      expect(status.needsBuy).to.be.false;
-      expect(status.excessOrDeficitUSD).to.equal(0n);
-    });
-
-    it("should return correct WETH price and amount", async () => {
-      await seedWETHInAave(5n * E18);
-
-      const status = await lens.getWETHRebalanceStatus();
-      expect(status.wethAmount).to.equal(5n * E18);
-      expect(status.wethPrice).to.be.gt(0n);
-      // wethValueUSD ≈ 5 × $3000 = $15,000
-      expect(status.wethValueUSD).to.be.gte(14_000n * E18);
-      expect(status.wethValueUSD).to.be.lte(16_000n * E18);
-    });
-  });
 });

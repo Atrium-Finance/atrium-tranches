@@ -15,14 +15,11 @@ describe("PrimeCDO — Withdrawals", () => {
   let cdo: any;
   let accounting: any;
   let strategy: any;
-  let adapter: any;
-  let oracle: any;
   let redemptionPolicy: any;
   let erc20Cooldown: any;
   let sharesCooldown: any;
   let mockUSDai: any;
   let mockSUSDai: any;
-  let mockWeth: any;
 
   let owner: SignerWithAddress;
   let seniorVault: SignerWithAddress;
@@ -31,8 +28,6 @@ describe("PrimeCDO — Withdrawals", () => {
   let beneficiary: SignerWithAddress;
 
   const E18 = 10n ** 18n;
-  const E8 = 10n ** 8n;
-  const ETH_PRICE = 3000n * E8;
   const DAY = 86400;
 
   async function seedTVL(tranche: number, amount: bigint) {
@@ -53,22 +48,9 @@ describe("PrimeCDO — Withdrawals", () => {
     // --- Tokens ---
     const BaseFactory = await ethers.getContractFactory("MockBaseAsset");
     mockUSDai = await BaseFactory.deploy("USDai", "USDai");
-    const WethFactory = await ethers.getContractFactory("MockWETH");
-    mockWeth = await WethFactory.deploy();
     const SUSDaiFactory = await ethers.getContractFactory("MockStakedUSDai");
     mockSUSDai = await SUSDaiFactory.deploy(await mockUSDai.getAddress(), E18);
     await mockUSDai.mint(await mockSUSDai.getAddress(), 10_000_000n * E18);
-
-    // --- Oracle ---
-    const FeedFactory = await ethers.getContractFactory("MockChainlinkFeed");
-    const mockFeed = await FeedFactory.deploy(8, ETH_PRICE);
-    const OracleFactory = await ethers.getContractFactory("WETHPriceOracle");
-    oracle = await OracleFactory.deploy(await mockFeed.getAddress());
-    await oracle.recordPrice();
-
-    // --- Aave mock ---
-    const PoolFactory = await ethers.getContractFactory("MockAavePoolForAdapter");
-    const mockPool = await PoolFactory.deploy(await mockWeth.getAddress());
 
     // --- Accounting ---
     const RiskFactory = await ethers.getContractFactory("RiskParams");
@@ -87,9 +69,9 @@ describe("PrimeCDO — Withdrawals", () => {
     const RPFactory = await ethers.getContractFactory("RedemptionPolicy");
     redemptionPolicy = await RPFactory.deploy(owner.address, await accounting.getAddress());
 
-    // --- Predict CDO address: Strategy(+0), Adapter(+1), CDO(+2) ---
+    // --- Predict CDO address: Strategy(+0), CDO(+1) ---
     const nonceBefore = await ethers.provider.getTransactionCount(owner.address);
-    const predictedCDO = ethers.getCreateAddress({ from: owner.address, nonce: nonceBefore + 2 });
+    const predictedCDO = ethers.getCreateAddress({ from: owner.address, nonce: nonceBefore + 1 });
 
     const StratFactory = await ethers.getContractFactory("SUSDaiStrategy");
     strategy = await StratFactory.deploy(
@@ -97,17 +79,9 @@ describe("PrimeCDO — Withdrawals", () => {
       owner.address,
     );
 
-    const AdapterFactory = await ethers.getContractFactory("AaveWETHAdapter");
-    adapter = await AdapterFactory.deploy(
-      await mockPool.getAddress(), await mockWeth.getAddress(),
-      await oracle.getAddress(), predictedCDO,
-    );
-
     const CDOFactory = await ethers.getContractFactory("PrimeCDO");
     cdo = await CDOFactory.deploy(
       await accounting.getAddress(), await strategy.getAddress(),
-      await adapter.getAddress(), await oracle.getAddress(), ethers.ZeroAddress,
-      await mockWeth.getAddress(),
       await redemptionPolicy.getAddress(), await erc20Cooldown.getAddress(),
       await sharesCooldown.getAddress(), await mockSUSDai.getAddress(), owner.address,
     );
@@ -442,7 +416,7 @@ describe("PrimeCDO — Withdrawals", () => {
       ).to.be.revertedWithCustomError(cdo, "PrimeVaults__ShortfallPaused");
     });
 
-    it("should revert withdrawJunior when shortfall paused", async () => {
+    it("should revert requestWithdraw for Junior when shortfall paused", async () => {
       let mockJrVault: any;
       const TokenFactory = await ethers.getContractFactory("MockBaseAsset");
       mockJrVault = await TokenFactory.deploy("pvJUNIOR", "pvJR");
@@ -458,7 +432,7 @@ describe("PrimeCDO — Withdrawals", () => {
       const jrSigner = await ethers.getImpersonatedSigner(mockJrVaultAddr);
       await ethers.provider.send("hardhat_setBalance", [mockJrVaultAddr, "0x56BC75E2D63100000"]);
       await expect(
-        cdo.connect(jrSigner).withdrawJunior(100n * E18, beneficiary.address, 0, 0),
+        cdo.connect(jrSigner).requestWithdraw(JUNIOR, 100n * E18, beneficiary.address, 0),
       ).to.be.revertedWithCustomError(cdo, "PrimeVaults__ShortfallPaused");
     });
   });
@@ -482,14 +456,6 @@ describe("PrimeCDO — Withdrawals", () => {
           SENIOR, 0, beneficiary.address, 0,
         ),
       ).to.be.revertedWithCustomError(cdo, "PrimeVaults__ZeroAmount");
-    });
-
-    it("should revert withdrawJunior from non-Junior vault", async () => {
-      await expect(
-        cdo.connect(seniorVault).withdrawJunior(
-          100n * E18, beneficiary.address, 0, 0,
-        ),
-      ).to.be.revertedWithCustomError(cdo, "PrimeVaults__Unauthorized");
     });
   });
 

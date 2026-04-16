@@ -97,60 +97,6 @@ const _abi = [
   {
     inputs: [
       {
-        internalType: "address",
-        name: "baseToken",
-        type: "address",
-      },
-      {
-        internalType: "uint256",
-        name: "baseAmount",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "wethAmount",
-        type: "uint256",
-      },
-      {
-        internalType: "address",
-        name: "depositor",
-        type: "address",
-      },
-    ],
-    name: "depositJunior",
-    outputs: [
-      {
-        internalType: "uint256",
-        name: "totalBaseValue",
-        type: "uint256",
-      },
-    ],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      {
-        internalType: "uint256",
-        name: "maxBaseToRecall",
-        type: "uint256",
-      },
-    ],
-    name: "rebalanceBuyWETH",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "rebalanceSellWETH",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      {
         internalType: "enum TrancheId",
         name: "tranche",
         type: "uint8",
@@ -210,16 +156,6 @@ const _abi = [
             name: "appliedCooldownType",
             type: "uint8",
           },
-          {
-            internalType: "uint256",
-            name: "wethAmount",
-            type: "uint256",
-          },
-          {
-            internalType: "uint256",
-            name: "wethCooldownId",
-            type: "uint256",
-          },
         ],
         internalType: "struct CDOWithdrawResult",
         name: "result",
@@ -240,87 +176,6 @@ const _abi = [
       },
     ],
     stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [
-      {
-        internalType: "uint256",
-        name: "baseAmount",
-        type: "uint256",
-      },
-      {
-        internalType: "address",
-        name: "beneficiary",
-        type: "address",
-      },
-      {
-        internalType: "uint256",
-        name: "vaultShares",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "totalJuniorShares",
-        type: "uint256",
-      },
-    ],
-    name: "withdrawJunior",
-    outputs: [
-      {
-        components: [
-          {
-            internalType: "bool",
-            name: "isInstant",
-            type: "bool",
-          },
-          {
-            internalType: "uint256",
-            name: "amountOut",
-            type: "uint256",
-          },
-          {
-            internalType: "uint256",
-            name: "cooldownId",
-            type: "uint256",
-          },
-          {
-            internalType: "address",
-            name: "cooldownHandler",
-            type: "address",
-          },
-          {
-            internalType: "uint256",
-            name: "unlockTime",
-            type: "uint256",
-          },
-          {
-            internalType: "uint256",
-            name: "feeAmount",
-            type: "uint256",
-          },
-          {
-            internalType: "enum CooldownType",
-            name: "appliedCooldownType",
-            type: "uint8",
-          },
-          {
-            internalType: "uint256",
-            name: "wethAmount",
-            type: "uint256",
-          },
-          {
-            internalType: "uint256",
-            name: "wethCooldownId",
-            type: "uint256",
-          },
-        ],
-        internalType: "struct CDOWithdrawResult",
-        name: "result",
-        type: "tuple",
-      },
-    ],
-    stateMutability: "nonpayable",
     type: "function",
   },
 ] as const;

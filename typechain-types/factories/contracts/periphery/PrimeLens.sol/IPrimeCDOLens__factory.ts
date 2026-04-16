@@ -11,19 +11,6 @@ import type {
 const _abi = [
   {
     inputs: [],
-    name: "i_aaveWETHAdapter",
-    outputs: [
-      {
-        internalType: "contract IAaveWETHAdapter",
-        name: "",
-        type: "address",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
     name: "i_accounting",
     outputs: [
       {
@@ -89,19 +76,6 @@ const _abi = [
   },
   {
     inputs: [],
-    name: "i_wethOracle",
-    outputs: [
-      {
-        internalType: "contract IWETHPriceOracle",
-        name: "",
-        type: "address",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
     name: "s_juniorShortfallPausePrice",
     outputs: [
       {
@@ -116,32 +90,6 @@ const _abi = [
   {
     inputs: [],
     name: "s_minCoverageForDeposit",
-    outputs: [
-      {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "s_ratioTarget",
-    outputs: [
-      {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "s_ratioTolerance",
     outputs: [
       {
         internalType: "uint256",

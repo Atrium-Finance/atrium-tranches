@@ -2,14 +2,10 @@
 /* tslint:disable */
 /* eslint-disable */
 export * as iAprPairFeedSol from "./IAprPairFeed.sol";
-export { IAaveWETHAdapter__factory } from "./IAaveWETHAdapter__factory";
 export { IAccounting__factory } from "./IAccounting__factory";
 export { IAprFeed__factory } from "./IAprFeed__factory";
 export { ICooldownHandler__factory } from "./ICooldownHandler__factory";
 export { IPrimeCDO__factory } from "./IPrimeCDO__factory";
 export { IQuoterV2__factory } from "./IQuoterV2__factory";
-export { IRatioController__factory } from "./IRatioController__factory";
 export { IStrategy__factory } from "./IStrategy__factory";
-export { ISwapFacility__factory } from "./ISwapFacility__factory";
 export { ISwapRouter__factory } from "./ISwapRouter__factory";
-export { IWETHPriceOracle__factory } from "./IWETHPriceOracle__factory";

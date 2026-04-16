@@ -9,8 +9,6 @@ import type * as governance from "./governance";
 export type { governance };
 import type * as interfaces from "./interfaces";
 export type { interfaces };
-import type * as junior from "./junior";
-export type { junior };
 import type * as libraries from "./libraries";
 export type { libraries };
 import type * as oracles from "./oracles";

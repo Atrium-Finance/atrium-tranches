@@ -23,25 +23,17 @@ import type {
 export interface IPrimeCDOLensInterface extends Interface {
   getFunction(
     nameOrSignature:
-      | "i_aaveWETHAdapter"
       | "i_accounting"
       | "i_erc20Cooldown"
       | "i_redemptionPolicy"
       | "i_sharesCooldown"
       | "i_strategy"
-      | "i_wethOracle"
       | "s_juniorShortfallPausePrice"
       | "s_minCoverageForDeposit"
-      | "s_ratioTarget"
-      | "s_ratioTolerance"
       | "s_shortfallPaused"
       | "s_tranches"
   ): FunctionFragment;
 
-  encodeFunctionData(
-    functionFragment: "i_aaveWETHAdapter",
-    values?: undefined
-  ): string;
   encodeFunctionData(
     functionFragment: "i_accounting",
     values?: undefined
@@ -63,23 +55,11 @@ export interface IPrimeCDOLensInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "i_wethOracle",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "s_juniorShortfallPausePrice",
     values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "s_minCoverageForDeposit",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "s_ratioTarget",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "s_ratioTolerance",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -91,10 +71,6 @@ export interface IPrimeCDOLensInterface extends Interface {
     values: [BigNumberish]
   ): string;
 
-  decodeFunctionResult(
-    functionFragment: "i_aaveWETHAdapter",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(
     functionFragment: "i_accounting",
     data: BytesLike
@@ -113,23 +89,11 @@ export interface IPrimeCDOLensInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "i_strategy", data: BytesLike): Result;
   decodeFunctionResult(
-    functionFragment: "i_wethOracle",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "s_juniorShortfallPausePrice",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "s_minCoverageForDeposit",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "s_ratioTarget",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "s_ratioTolerance",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -182,8 +146,6 @@ export interface IPrimeCDOLens extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  i_aaveWETHAdapter: TypedContractMethod<[], [string], "view">;
-
   i_accounting: TypedContractMethod<[], [string], "view">;
 
   i_erc20Cooldown: TypedContractMethod<[], [string], "view">;
@@ -194,15 +156,9 @@ export interface IPrimeCDOLens extends BaseContract {
 
   i_strategy: TypedContractMethod<[], [string], "view">;
 
-  i_wethOracle: TypedContractMethod<[], [string], "view">;
-
   s_juniorShortfallPausePrice: TypedContractMethod<[], [bigint], "view">;
 
   s_minCoverageForDeposit: TypedContractMethod<[], [bigint], "view">;
-
-  s_ratioTarget: TypedContractMethod<[], [bigint], "view">;
-
-  s_ratioTolerance: TypedContractMethod<[], [bigint], "view">;
 
   s_shortfallPaused: TypedContractMethod<[], [boolean], "view">;
 
@@ -212,9 +168,6 @@ export interface IPrimeCDOLens extends BaseContract {
     key: string | FunctionFragment
   ): T;
 
-  getFunction(
-    nameOrSignature: "i_aaveWETHAdapter"
-  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "i_accounting"
   ): TypedContractMethod<[], [string], "view">;
@@ -231,19 +184,10 @@ export interface IPrimeCDOLens extends BaseContract {
     nameOrSignature: "i_strategy"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
-    nameOrSignature: "i_wethOracle"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
     nameOrSignature: "s_juniorShortfallPausePrice"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "s_minCoverageForDeposit"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "s_ratioTarget"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "s_ratioTolerance"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "s_shortfallPaused"

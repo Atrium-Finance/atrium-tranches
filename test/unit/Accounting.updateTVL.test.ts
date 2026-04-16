@@ -70,7 +70,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       const mzBefore = await accounting.s_mezzTVL();
       const jrBefore = await accounting.s_juniorBaseTVL();
 
-      await accounting.connect(cdo).updateTVL(currentTotal, 0);
+      await accounting.connect(cdo).updateTVL(currentTotal);
 
       const srAfter = await accounting.s_seniorTVL();
       const mzAfter = await accounting.s_mezzTVL();
@@ -98,7 +98,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
 
       const gain = 100n * E18; // $100 gain
       const prevTotal = 10_000n * E18;
-      await accounting.connect(cdo).updateTVL(prevTotal + gain, 0);
+      await accounting.connect(cdo).updateTVL(prevTotal + gain);
 
       // Reserve cut = 5% of 100 = 5
       const reserveCut = (gain * 500n) / 10_000n;
@@ -122,7 +122,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       // Tiny gain: only $10
       const prevTotal = 10_000_000n * E18;
       const tinyGain = 10n * E18;
-      await accounting.connect(cdo).updateTVL(prevTotal + tinyGain, 0);
+      await accounting.connect(cdo).updateTVL(prevTotal + tinyGain);
 
       // Senior target for 9M at 20% for 1 day ≈ $4,932 > $9.50 net gain
       // So Senior gets all net gain, Mezz/Junior get 0
@@ -139,7 +139,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
 
       // No time advance → deltaT = 0
       const srBefore = await accounting.s_seniorTVL();
-      await accounting.connect(cdo).updateTVL(2_100n * E18, 0);
+      await accounting.connect(cdo).updateTVL(2_100n * E18);
 
       // No change because deltaT = 0
       expect(await accounting.s_seniorTVL()).to.equal(srBefore);
@@ -150,7 +150,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       await time.increase(DAY);
 
       await expect(
-        accounting.connect(cdo).updateTVL(1_100n * E18, 0),
+        accounting.connect(cdo).updateTVL(1_100n * E18),
       ).to.emit(accounting, "GainSplit");
     });
   });
@@ -165,7 +165,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       await time.increase(DAY);
 
       const gain = 1_000n * E18;
-      await accounting.connect(cdo).updateTVL(10_000n * E18 + gain, 0);
+      await accounting.connect(cdo).updateTVL(10_000n * E18 + gain);
 
       // reserve = 1000 × 5% = 50
       expect(await accounting.s_reserveTVL()).to.equal(50n * E18);
@@ -176,7 +176,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       await time.increase(DAY);
 
       // Loss: current < prev
-      await accounting.connect(cdo).updateTVL(9_000n * E18, 0);
+      await accounting.connect(cdo).updateTVL(9_000n * E18);
 
       expect(await accounting.s_reserveTVL()).to.equal(0n);
     });
@@ -192,7 +192,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       await time.increase(DAY);
 
       // Loss = $500 (< Jr TVL of $3K)
-      await accounting.connect(cdo).updateTVL(9_500n * E18, 0);
+      await accounting.connect(cdo).updateTVL(9_500n * E18);
 
       expect(await accounting.s_juniorBaseTVL()).to.equal(2_500n * E18); // 3K - 500
       expect(await accounting.s_mezzTVL()).to.equal(2_000n * E18); // unchanged
@@ -204,7 +204,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       await time.increase(DAY);
 
       // Loss = $1,500 (> Jr TVL of $1K)
-      await accounting.connect(cdo).updateTVL(6_500n * E18, 0);
+      await accounting.connect(cdo).updateTVL(6_500n * E18);
 
       expect(await accounting.s_juniorBaseTVL()).to.equal(0n); // wiped
       expect(await accounting.s_mezzTVL()).to.equal(1_500n * E18); // 2K - 500
@@ -216,7 +216,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       await time.increase(DAY);
 
       // Loss = $2,000 (> Jr + Mz = $1,500)
-      await accounting.connect(cdo).updateTVL(4_500n * E18, 0);
+      await accounting.connect(cdo).updateTVL(4_500n * E18);
 
       expect(await accounting.s_juniorBaseTVL()).to.equal(0n); // wiped
       expect(await accounting.s_mezzTVL()).to.equal(0n); // wiped
@@ -228,23 +228,8 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       await time.increase(DAY);
 
       await expect(
-        accounting.connect(cdo).updateTVL(4_000n * E18, 0),
+        accounting.connect(cdo).updateTVL(4_000n * E18),
       ).to.emit(accounting, "LossApplied");
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  WETH TVL update
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe("WETH TVL in updateTVL", () => {
-    it("should update s_juniorWethTVL with the provided value", async () => {
-      await seedAll(0n, 0n, 5_000n * E18);
-      await time.increase(DAY);
-
-      await accounting.connect(cdo).updateTVL(5_000n * E18, 1_500n * E18);
-
-      expect(await accounting.s_juniorWethTVL()).to.equal(1_500n * E18);
     });
   });
 

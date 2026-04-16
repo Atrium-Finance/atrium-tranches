@@ -13,14 +13,10 @@ describe("TrancheVault — ERC-4626", () => {
   let cdo: any;
   let accounting: any;
   let strategy: any;
-  let adapter: any;
-  let oracle: any;
   let redemptionPolicy: any;
   let erc20Cooldown: any;
   let sharesCooldown: any;
   let mockUSDai: any;
-  let mockWeth: any;
-  let mockPool: any;
 
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
@@ -28,8 +24,6 @@ describe("TrancheVault — ERC-4626", () => {
   let other: SignerWithAddress;
 
   const E18 = 10n ** 18n;
-  const E8 = 10n ** 8n;
-  const ETH_PRICE = 3000n * E8;
   const DAY = 86400;
 
   async function seedTVL(tranche: number, amount: bigint) {
@@ -40,35 +34,12 @@ describe("TrancheVault — ERC-4626", () => {
     await mockUSDai.mint(await strategy.getAddress(), amount);
   }
 
-  async function seedWETHInAave(amount: bigint) {
-    const cdoAddr = await cdo.getAddress();
-    await mockWeth.mint(cdoAddr, amount);
-    await ethers.provider.send("hardhat_setBalance", [cdoAddr, "0x56BC75E2D63100000"]);
-    const cdoSigner = await ethers.getImpersonatedSigner(cdoAddr);
-    await mockWeth.connect(cdoSigner).approve(await adapter.getAddress(), amount);
-    await adapter.connect(cdoSigner).supply(amount);
-    await accounting.connect(cdoSigner).setJuniorWethTVL(await adapter.totalAssetsUSD());
-  }
-
   beforeEach(async () => {
     [owner, alice, bob, other] = await ethers.getSigners();
 
     // --- Tokens ---
     const BaseFactory = await ethers.getContractFactory("MockBaseAsset");
     mockUSDai = await BaseFactory.deploy("USDai", "USDai");
-    const WethFactory = await ethers.getContractFactory("MockWETH");
-    mockWeth = await WethFactory.deploy();
-
-    // --- Oracle ---
-    const FeedFactory = await ethers.getContractFactory("MockChainlinkFeed");
-    const mockFeed = await FeedFactory.deploy(8, ETH_PRICE);
-    const OracleFactory = await ethers.getContractFactory("WETHPriceOracle");
-    oracle = await OracleFactory.deploy(await mockFeed.getAddress());
-    await oracle.recordPrice();
-
-    // --- Aave mock ---
-    const PoolFactory = await ethers.getContractFactory("MockAavePoolForAdapter");
-    mockPool = await PoolFactory.deploy(await mockWeth.getAddress());
 
     // --- Accounting ---
     const RiskFactory = await ethers.getContractFactory("RiskParams");
@@ -78,32 +49,24 @@ describe("TrancheVault — ERC-4626", () => {
 
     // --- Cooldown handlers ---
     const EC20Factory = await ethers.getContractFactory("ERC20Cooldown");
-    erc20Cooldown = await EC20Factory.deploy(owner.address, 3 * DAY, 3 * DAY);
+    erc20Cooldown = await EC20Factory.deploy(owner.address);
     const SCFactory = await ethers.getContractFactory("SharesCooldown");
-    sharesCooldown = await SCFactory.deploy(owner.address, 7 * DAY);
+    sharesCooldown = await SCFactory.deploy(owner.address);
 
     // --- RedemptionPolicy ---
     const RPFactory = await ethers.getContractFactory("RedemptionPolicy");
     redemptionPolicy = await RPFactory.deploy(owner.address, await accounting.getAddress());
 
-    // --- Predict addresses: Strategy(+0), Adapter(+1), CDO(+2) ---
+    // --- Predict addresses: Strategy(+0), CDO(+1) ---
     const nonceBefore = await ethers.provider.getTransactionCount(owner.address);
-    const predictedCDO = ethers.getCreateAddress({ from: owner.address, nonce: nonceBefore + 2 });
+    const predictedCDO = ethers.getCreateAddress({ from: owner.address, nonce: nonceBefore + 1 });
 
     const StratFactory = await ethers.getContractFactory("MockStrategy");
     strategy = await StratFactory.deploy(predictedCDO, await mockUSDai.getAddress());
 
-    const AdapterFactory = await ethers.getContractFactory("AaveWETHAdapter");
-    adapter = await AdapterFactory.deploy(
-      await mockPool.getAddress(), await mockWeth.getAddress(),
-      await oracle.getAddress(), predictedCDO,
-    );
-
     const CDOFactory = await ethers.getContractFactory("PrimeCDO");
     cdo = await CDOFactory.deploy(
       await accounting.getAddress(), await strategy.getAddress(),
-      await adapter.getAddress(), await oracle.getAddress(), ethers.ZeroAddress,
-      await mockWeth.getAddress(),
       await redemptionPolicy.getAddress(), await erc20Cooldown.getAddress(),
       await sharesCooldown.getAddress(), await mockUSDai.getAddress(), owner.address,
     );
@@ -112,15 +75,15 @@ describe("TrancheVault — ERC-4626", () => {
     const VaultFactory = await ethers.getContractFactory("TrancheVault");
     seniorVault = await VaultFactory.deploy(
       await cdo.getAddress(), SENIOR, await mockUSDai.getAddress(),
-      await mockWeth.getAddress(), "PrimeVaults Senior", "pvSENIOR",
+      "PrimeVaults Senior", "pvSENIOR",
     );
     mezzVault = await VaultFactory.deploy(
       await cdo.getAddress(), MEZZ, await mockUSDai.getAddress(),
-      await mockWeth.getAddress(), "PrimeVaults Mezzanine", "pvMEZZ",
+      "PrimeVaults Mezzanine", "pvMEZZ",
     );
     juniorVault = await VaultFactory.deploy(
       await cdo.getAddress(), JUNIOR, await mockUSDai.getAddress(),
-      await mockWeth.getAddress(), "PrimeVaults Junior", "pvJUNIOR",
+      "PrimeVaults Junior", "pvJUNIOR",
     );
 
     // --- Wire up ---
@@ -137,18 +100,14 @@ describe("TrancheVault — ERC-4626", () => {
     // --- Fund users ---
     await mockUSDai.mint(alice.address, 1_000_000n * E18);
     await mockUSDai.mint(bob.address, 1_000_000n * E18);
-    await mockWeth.mint(alice.address, 1_000n * E18);
-    await mockWeth.mint(bob.address, 1_000n * E18);
 
     // --- Approvals ---
     await mockUSDai.connect(alice).approve(await seniorVault.getAddress(), ethers.MaxUint256);
     await mockUSDai.connect(alice).approve(await mezzVault.getAddress(), ethers.MaxUint256);
     await mockUSDai.connect(alice).approve(await juniorVault.getAddress(), ethers.MaxUint256);
-    await mockWeth.connect(alice).approve(await juniorVault.getAddress(), ethers.MaxUint256);
     await mockUSDai.connect(bob).approve(await seniorVault.getAddress(), ethers.MaxUint256);
     await mockUSDai.connect(bob).approve(await mezzVault.getAddress(), ethers.MaxUint256);
     await mockUSDai.connect(bob).approve(await juniorVault.getAddress(), ethers.MaxUint256);
-    await mockWeth.connect(bob).approve(await juniorVault.getAddress(), ethers.MaxUint256);
 
     // --- Seed Junior TVL so Sr/Mz coverage gate passes ---
     await seedTVL(JUNIOR, 500_000n * E18);
@@ -170,7 +129,7 @@ describe("TrancheVault — ERC-4626", () => {
       expect(await mezzVault.totalAssets()).to.equal(5_000n * E18);
     });
 
-    it("should read Junior TVL (base + WETH) from Accounting", async () => {
+    it("should read Junior TVL from Accounting", async () => {
       // Junior already seeded with 500K
       expect(await juniorVault.totalAssets()).to.equal(500_000n * E18);
     });
@@ -220,55 +179,26 @@ describe("TrancheVault — ERC-4626", () => {
         seniorVault.connect(alice).deposit(1_000n * E18, alice.address),
       ).to.emit(seniorVault, "Deposit");
     });
-
-    it("should revert deposit on Junior vault (must use depositJunior)", async () => {
-      await expect(
-        juniorVault.connect(alice).deposit(1_000n * E18, alice.address),
-      ).to.be.revertedWithCustomError(juniorVault, "PrimeVaults__IsJunior");
-    });
-
-    it("should revert mint on Junior vault", async () => {
-      await expect(
-        juniorVault.connect(alice).mint(1_000n * E18, alice.address),
-      ).to.be.revertedWithCustomError(juniorVault, "PrimeVaults__IsJunior");
-    });
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  depositJunior — validates trancheId == JUNIOR
+  //  deposit — Junior uses deposit() (same as Sr/Mz)
   // ═══════════════════════════════════════════════════════════════════
 
-  describe("depositJunior", () => {
-    it("should accept dual-asset deposit with correct WETH ratio", async () => {
-      // 20% WETH ratio: base=8000, weth value=$2000 → wethAmount = 2000/3000 WETH
-      const baseAmount = 8_000n * E18;
-      const wethAmount = 2000n * E18 / 3000n;
-
-      await juniorVault.connect(alice).depositJunior(baseAmount, wethAmount, alice.address);
+  describe("deposit — Junior", () => {
+    it("should accept deposit on Junior vault", async () => {
+      const amount = 10_000n * E18;
+      await juniorVault.connect(alice).deposit(amount, alice.address);
 
       const shares = await juniorVault.balanceOf(alice.address);
       expect(shares).to.be.gt(0n);
     });
 
-    it("should revert when called on Senior vault", async () => {
-      await expect(
-        seniorVault.connect(alice).depositJunior(1_000n * E18, 0, alice.address),
-      ).to.be.revertedWithCustomError(seniorVault, "PrimeVaults__NotJunior");
-    });
+    it("should mint on Junior vault", async () => {
+      const shares = 10_000n * E18;
+      await juniorVault.connect(alice).mint(shares, alice.address);
 
-    it("should revert when called on Mezzanine vault", async () => {
-      await expect(
-        mezzVault.connect(alice).depositJunior(1_000n * E18, 0, alice.address),
-      ).to.be.revertedWithCustomError(mezzVault, "PrimeVaults__NotJunior");
-    });
-
-    it("should emit JuniorDeposited event", async () => {
-      const baseAmount = 8_000n * E18;
-      const wethAmount = 2000n * E18 / 3000n;
-
-      await expect(
-        juniorVault.connect(alice).depositJunior(baseAmount, wethAmount, alice.address),
-      ).to.emit(juniorVault, "JuniorDeposited");
+      expect(await juniorVault.balanceOf(alice.address)).to.equal(shares);
     });
   });
 

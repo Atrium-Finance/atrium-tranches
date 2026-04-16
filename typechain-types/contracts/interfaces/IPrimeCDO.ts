@@ -29,8 +29,6 @@ export type CDOWithdrawResultStruct = {
   unlockTime: BigNumberish;
   feeAmount: BigNumberish;
   appliedCooldownType: BigNumberish;
-  wethAmount: BigNumberish;
-  wethCooldownId: BigNumberish;
 };
 
 export type CDOWithdrawResultStructOutput = [
@@ -40,9 +38,7 @@ export type CDOWithdrawResultStructOutput = [
   cooldownHandler: string,
   unlockTime: bigint,
   feeAmount: bigint,
-  appliedCooldownType: bigint,
-  wethAmount: bigint,
-  wethCooldownId: bigint
+  appliedCooldownType: bigint
 ] & {
   isInstant: boolean;
   amountOut: bigint;
@@ -51,8 +47,6 @@ export type CDOWithdrawResultStructOutput = [
   unlockTime: bigint;
   feeAmount: bigint;
   appliedCooldownType: bigint;
-  wethAmount: bigint;
-  wethCooldownId: bigint;
 };
 
 export interface IPrimeCDOInterface extends Interface {
@@ -62,12 +56,8 @@ export interface IPrimeCDOInterface extends Interface {
       | "claimSharesWithdraw"
       | "claimWithdraw"
       | "deposit"
-      | "depositJunior"
-      | "rebalanceBuyWETH"
-      | "rebalanceSellWETH"
       | "requestWithdraw"
       | "strategy"
-      | "withdrawJunior"
   ): FunctionFragment;
 
   encodeFunctionData(
@@ -87,26 +77,10 @@ export interface IPrimeCDOInterface extends Interface {
     values: [BigNumberish, AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "depositJunior",
-    values: [AddressLike, BigNumberish, BigNumberish, AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "rebalanceBuyWETH",
-    values: [BigNumberish]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "rebalanceSellWETH",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "requestWithdraw",
     values: [BigNumberish, BigNumberish, AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(functionFragment: "strategy", values?: undefined): string;
-  encodeFunctionData(
-    functionFragment: "withdrawJunior",
-    values: [BigNumberish, AddressLike, BigNumberish, BigNumberish]
-  ): string;
 
   decodeFunctionResult(functionFragment: "accounting", data: BytesLike): Result;
   decodeFunctionResult(
@@ -119,26 +93,10 @@ export interface IPrimeCDOInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "deposit", data: BytesLike): Result;
   decodeFunctionResult(
-    functionFragment: "depositJunior",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "rebalanceBuyWETH",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "rebalanceSellWETH",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "requestWithdraw",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "strategy", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "withdrawJunior",
-    data: BytesLike
-  ): Result;
 }
 
 export interface IPrimeCDO extends BaseContract {
@@ -204,25 +162,6 @@ export interface IPrimeCDO extends BaseContract {
     "nonpayable"
   >;
 
-  depositJunior: TypedContractMethod<
-    [
-      baseToken: AddressLike,
-      baseAmount: BigNumberish,
-      wethAmount: BigNumberish,
-      depositor: AddressLike
-    ],
-    [bigint],
-    "nonpayable"
-  >;
-
-  rebalanceBuyWETH: TypedContractMethod<
-    [maxBaseToRecall: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-
-  rebalanceSellWETH: TypedContractMethod<[], [void], "nonpayable">;
-
   requestWithdraw: TypedContractMethod<
     [
       tranche: BigNumberish,
@@ -235,17 +174,6 @@ export interface IPrimeCDO extends BaseContract {
   >;
 
   strategy: TypedContractMethod<[], [string], "view">;
-
-  withdrawJunior: TypedContractMethod<
-    [
-      baseAmount: BigNumberish,
-      beneficiary: AddressLike,
-      vaultShares: BigNumberish,
-      totalJuniorShares: BigNumberish
-    ],
-    [CDOWithdrawResultStructOutput],
-    "nonpayable"
-  >;
 
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
@@ -272,24 +200,6 @@ export interface IPrimeCDO extends BaseContract {
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "depositJunior"
-  ): TypedContractMethod<
-    [
-      baseToken: AddressLike,
-      baseAmount: BigNumberish,
-      wethAmount: BigNumberish,
-      depositor: AddressLike
-    ],
-    [bigint],
-    "nonpayable"
-  >;
-  getFunction(
-    nameOrSignature: "rebalanceBuyWETH"
-  ): TypedContractMethod<[maxBaseToRecall: BigNumberish], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "rebalanceSellWETH"
-  ): TypedContractMethod<[], [void], "nonpayable">;
-  getFunction(
     nameOrSignature: "requestWithdraw"
   ): TypedContractMethod<
     [
@@ -304,18 +214,6 @@ export interface IPrimeCDO extends BaseContract {
   getFunction(
     nameOrSignature: "strategy"
   ): TypedContractMethod<[], [string], "view">;
-  getFunction(
-    nameOrSignature: "withdrawJunior"
-  ): TypedContractMethod<
-    [
-      baseAmount: BigNumberish,
-      beneficiary: AddressLike,
-      vaultShares: BigNumberish,
-      totalJuniorShares: BigNumberish
-    ],
-    [CDOWithdrawResultStructOutput],
-    "nonpayable"
-  >;
 
   filters: {};
 }

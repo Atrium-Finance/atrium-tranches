@@ -23,26 +23,19 @@ import type {
 export interface IAccountingInterface extends Interface {
   getFunction(
     nameOrSignature:
-      | "applySlippageLoss"
       | "claimReserve"
       | "getAllTVLs"
       | "getJuniorAPR"
-      | "getJuniorBaseTVL"
       | "getJuniorTVL"
-      | "getJuniorWethTVL"
+      | "getMezzAPR"
       | "getSeniorAPR"
       | "getTrancheTVL"
       | "recordDeposit"
       | "recordFee"
       | "recordWithdraw"
-      | "setJuniorWethTVL"
       | "updateTVL"
   ): FunctionFragment;
 
-  encodeFunctionData(
-    functionFragment: "applySlippageLoss",
-    values: [BigNumberish]
-  ): string;
   encodeFunctionData(
     functionFragment: "claimReserve",
     values?: undefined
@@ -56,15 +49,11 @@ export interface IAccountingInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "getJuniorBaseTVL",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "getJuniorTVL",
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "getJuniorWethTVL",
+    functionFragment: "getMezzAPR",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -88,18 +77,10 @@ export interface IAccountingInterface extends Interface {
     values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "setJuniorWethTVL",
+    functionFragment: "updateTVL",
     values: [BigNumberish]
   ): string;
-  encodeFunctionData(
-    functionFragment: "updateTVL",
-    values: [BigNumberish, BigNumberish]
-  ): string;
 
-  decodeFunctionResult(
-    functionFragment: "applySlippageLoss",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(
     functionFragment: "claimReserve",
     data: BytesLike
@@ -110,17 +91,10 @@ export interface IAccountingInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "getJuniorBaseTVL",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "getJuniorTVL",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(
-    functionFragment: "getJuniorWethTVL",
-    data: BytesLike
-  ): Result;
+  decodeFunctionResult(functionFragment: "getMezzAPR", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getSeniorAPR",
     data: BytesLike
@@ -136,10 +110,6 @@ export interface IAccountingInterface extends Interface {
   decodeFunctionResult(functionFragment: "recordFee", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "recordWithdraw",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "setJuniorWethTVL",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "updateTVL", data: BytesLike): Result;
@@ -188,12 +158,6 @@ export interface IAccounting extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  applySlippageLoss: TypedContractMethod<
-    [slippageLoss: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-
   claimReserve: TypedContractMethod<[], [bigint], "nonpayable">;
 
   getAllTVLs: TypedContractMethod<
@@ -204,11 +168,9 @@ export interface IAccounting extends BaseContract {
 
   getJuniorAPR: TypedContractMethod<[], [bigint], "view">;
 
-  getJuniorBaseTVL: TypedContractMethod<[], [bigint], "view">;
-
   getJuniorTVL: TypedContractMethod<[], [bigint], "view">;
 
-  getJuniorWethTVL: TypedContractMethod<[], [bigint], "view">;
+  getMezzAPR: TypedContractMethod<[], [bigint], "view">;
 
   getSeniorAPR: TypedContractMethod<[], [bigint], "view">;
 
@@ -232,15 +194,9 @@ export interface IAccounting extends BaseContract {
     "nonpayable"
   >;
 
-  setJuniorWethTVL: TypedContractMethod<
-    [wethValueUSD: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-
   updateTVL: TypedContractMethod<
-    [currentStrategyTVL: BigNumberish, currentWethValueUSD: BigNumberish],
-    [bigint],
+    [currentStrategyTVL: BigNumberish],
+    [void],
     "nonpayable"
   >;
 
@@ -248,9 +204,6 @@ export interface IAccounting extends BaseContract {
     key: string | FunctionFragment
   ): T;
 
-  getFunction(
-    nameOrSignature: "applySlippageLoss"
-  ): TypedContractMethod<[slippageLoss: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "claimReserve"
   ): TypedContractMethod<[], [bigint], "nonpayable">;
@@ -265,13 +218,10 @@ export interface IAccounting extends BaseContract {
     nameOrSignature: "getJuniorAPR"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "getJuniorBaseTVL"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
     nameOrSignature: "getJuniorTVL"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "getJuniorWethTVL"
+    nameOrSignature: "getMezzAPR"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getSeniorAPR"
@@ -301,13 +251,10 @@ export interface IAccounting extends BaseContract {
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "setJuniorWethTVL"
-  ): TypedContractMethod<[wethValueUSD: BigNumberish], [void], "nonpayable">;
-  getFunction(
     nameOrSignature: "updateTVL"
   ): TypedContractMethod<
-    [currentStrategyTVL: BigNumberish, currentWethValueUSD: BigNumberish],
-    [bigint],
+    [currentStrategyTVL: BigNumberish],
+    [void],
     "nonpayable"
   >;
 
