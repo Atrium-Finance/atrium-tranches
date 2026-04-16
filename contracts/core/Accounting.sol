@@ -17,7 +17,7 @@ import { FixedPointMath } from "../libraries/FixedPointMath.sol";
  * @title Accounting
  * @notice Tracks per-tranche TVL for a single PrimeVaults market.
  * @dev Senior + Mezzanine + Junior + Reserve. All tranches are base-asset only.
- *      Gain splitting: Senior gets target APR, Mezz gets MAX(floor, subPoolAPY*(1-RP2)), Junior gets residual.
+ *      Gain splitting: Senior gets target APY, Mezz gets MAX(floor, subPoolAPY*(1-RP2)), Junior gets residual.
  *      Loss waterfall: Junior → Mezzanine → Senior.
  *      See MATH_REFERENCE §C1-C4 for gain splitting, §D1-D4 for loss waterfall.
  */
@@ -198,29 +198,29 @@ contract Accounting is IAccounting {
     }
 
     /**
-     * @notice Compute current Senior APR using APR feed + risk premiums.
-     * @dev APR_sr = MAX(aprTarget, aprBase × (1 - RP1)). See MATH_REFERENCE §E5.
+     * @notice Compute current Senior APY using APR feed + risk premiums.
+     * @dev APY_sr = MAX(aaveBenchmark, baseAPY × (1 - RP1)). See MATH_REFERENCE §E5.
      */
-    function getSeniorAPR() external view override returns (uint256) {
-        return _computeSeniorAPR();
+    function getSeniorAPY() external view override returns (uint256) {
+        return _computeSeniorAPY();
     }
 
     /**
-     * @notice Compute current Mezzanine APR using APR feed + risk premiums.
-     * @dev APR_mz = MAX(aprBase, subPoolAPY × (1 - RP2)). See MATH_REFERENCE §E6.
+     * @notice Compute current Mezzanine APY using APR feed + risk premiums.
+     * @dev APY_mz = MAX(aaveBenchmark, subPoolAPY × (1 - RP2)). See MATH_REFERENCE §E6.
      */
-    function getMezzAPR() external view override returns (uint256) {
-        return _computeMezzAPR();
+    function getMezzAPY() external view override returns (uint256) {
+        return _computeMezzAPY();
     }
 
     /**
-     * @notice Compute Junior residual APR.
+     * @notice Compute Junior residual APY.
      * @dev Junior gets the residual after Senior and Mezzanine target claims.
      *      See MATH_REFERENCE §C5.
-     * @return Junior residual APR as 18-decimal fixed-point
+     * @return Junior residual APY as 18-decimal fixed-point
      */
-    function getJuniorAPR() external view override returns (uint256) {
-        return _computeJuniorAPR();
+    function getJuniorAPY() external view override returns (uint256) {
+        return _computeJuniorAPY();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -241,22 +241,22 @@ contract Accounting is IAccounting {
         s_reserveTVL += reserveCut;
 
         // C3: Senior target gain (compound index)
-        uint256 aprSr = _computeSeniorAPR();
-        uint256 seniorGainTarget = (s_seniorTVL * aprSr * deltaT) / (YEAR * PRECISION);
+        uint256 apySr = _computeSeniorAPY();
+        uint256 seniorGainTarget = (s_seniorTVL * apySr * deltaT) / (YEAR * PRECISION);
 
         // Update Senior target index
-        if (s_seniorTVL > 0 && aprSr > 0) {
-            uint256 interestFactor = (aprSr * deltaT) / YEAR;
+        if (s_seniorTVL > 0 && apySr > 0) {
+            uint256 interestFactor = (apySr * deltaT) / YEAR;
             s_srtTargetIndex = (s_srtTargetIndex * (PRECISION + interestFactor)) / PRECISION;
         }
 
         // C4: Mezzanine target gain (compound index)
-        uint256 aprMz = _computeMezzAPR();
-        uint256 mezzGainTarget = (s_mezzTVL * aprMz * deltaT) / (YEAR * PRECISION);
+        uint256 apyMz = _computeMezzAPY();
+        uint256 mezzGainTarget = (s_mezzTVL * apyMz * deltaT) / (YEAR * PRECISION);
 
         // Update Mezz target index
-        if (s_mezzTVL > 0 && aprMz > 0) {
-            uint256 interestFactor = (aprMz * deltaT) / YEAR;
+        if (s_mezzTVL > 0 && apyMz > 0) {
+            uint256 interestFactor = (apyMz * deltaT) / YEAR;
             s_mzTargetIndex = (s_mzTargetIndex * (PRECISION + interestFactor)) / PRECISION;
         }
 
@@ -355,14 +355,14 @@ contract Accounting is IAccounting {
 
     /**
      * @dev Read APR pair from feed. Returns (0, 0) if feed is not a contract or call fails.
-     * @return aaveBenchmarkAPR Aave weighted-average supply rate (used as floor for Senior & Mezz)
+     * @return aaveBenchmarkAPY Aave weighted-average supply rate (used as floor for Senior & Mezz)
      * @return strategyAPR Actual sUSDai yield rate (used as base APY for gain splitting)
      */
-    function _getAprPair() internal view returns (uint256 aaveBenchmarkAPR, uint256 strategyAPR) {
+    function _getAprPair() internal view returns (uint256 aaveBenchmarkAPY, uint256 strategyAPR) {
         address feed = address(i_aprFeed);
         if (feed == address(0) || feed.code.length == 0) return (0, 0);
         try i_aprFeed.latestRoundData() returns (IAprPairFeed.TRound memory round) {
-            aaveBenchmarkAPR = _aprTo18Dec(round.aprTarget);
+            aaveBenchmarkAPY = _aprTo18Dec(round.aprTarget);
             strategyAPR = _aprTo18Dec(round.aprBase);
         } catch {
             return (0, 0);
@@ -370,7 +370,7 @@ contract Accounting is IAccounting {
     }
 
     /**
-     * @dev Base APY = strategy APR (no dilution — all tranches are base-asset only).
+     * @dev Base APR = strategy APR (no dilution — all tranches are base-asset only).
      */
     function _computeBaseAPY() internal view returns (uint256) {
         (, uint256 strategyAPR) = _getAprPair();
@@ -378,41 +378,41 @@ contract Accounting is IAccounting {
     }
 
     /**
-     * @dev APR_sr = MAX(aaveBenchmark, baseAPY × (1 - RP1)). See MATH_REFERENCE §E4.
+     * @dev APY_sr = MAX(aaveBenchmark, baseAPY × (1 - RP1)). See MATH_REFERENCE §E4.
      */
-    function _computeSeniorAPR() internal view returns (uint256) {
-        (uint256 aaveBenchmarkAPR, ) = _getAprPair();
-        uint256 apyBase = _computeBaseAPY();
+    function _computeSeniorAPY() internal view returns (uint256) {
+        (uint256 aaveBenchmarkAPY, ) = _getAprPair();
+        uint256 baseAPY = _computeBaseAPY();
 
         uint256 rp1 = _computeRP1();
 
-        uint256 aprSr = rp1 < PRECISION ? apyBase.fpMul(PRECISION - rp1) : 0;
+        uint256 apySr = rp1 < PRECISION ? baseAPY.fpMul(PRECISION - rp1) : 0;
 
-        return aprSr > aaveBenchmarkAPR ? aprSr : aaveBenchmarkAPR;
+        return apySr > aaveBenchmarkAPY ? apySr : aaveBenchmarkAPY;
     }
 
     /**
-     * @dev Compute sub-pool effective APY. See MATH_REFERENCE §E5.
+     * @dev Compute sub-pool effective APR. See MATH_REFERENCE §E5.
      *      APY_sub = APY_base + (APY_base - APY_sr) × TVL_sr / (TVL_mz + Jr)
      *      Can be negative when floor is active (clamped to 0).
      */
     function _computeSubPoolAPY() internal view returns (uint256) {
-        uint256 apyBase = _computeBaseAPY();
-        uint256 aprSr = _computeSeniorAPR();
+        uint256 baseAPY = _computeBaseAPY();
+        uint256 apySr = _computeSeniorAPY();
 
         uint256 mzPlusJr = s_mezzTVL + s_juniorBaseTVL;
         if (mzPlusJr == 0) return 0;
 
         uint256 leverage = s_seniorTVL > 0 ? s_seniorTVL.fpDiv(mzPlusJr) : 0;
 
-        if (apyBase >= aprSr) {
+        if (baseAPY >= apySr) {
             // Normal case: sub-pool gets boosted by RP1 transfer from Senior
-            uint256 bonus = (apyBase - aprSr).fpMul(leverage);
-            return apyBase + bonus;
+            uint256 bonus = (baseAPY - apySr).fpMul(leverage);
+            return baseAPY + bonus;
         } else {
             // Floor active: sub-pool pays for Senior floor guarantee
-            uint256 deficit = (aprSr - apyBase).fpMul(leverage);
-            if (apyBase > deficit) return apyBase - deficit;
+            uint256 deficit = (apySr - baseAPY).fpMul(leverage);
+            if (baseAPY > deficit) return baseAPY - deficit;
             return 0;
         }
     }
@@ -421,41 +421,41 @@ contract Accounting is IAccounting {
      * @dev APY_mz = MAX(aaveBenchmark, APY_sub × (1 - RP2)). See MATH_REFERENCE §E7.
      *      Floor = Aave benchmark rate from AprPairFeed.
      */
-    function _computeMezzAPR() internal view returns (uint256) {
-        (uint256 aaveBenchmarkAPR, ) = _getAprPair();
+    function _computeMezzAPY() internal view returns (uint256) {
+        (uint256 aaveBenchmarkAPY, ) = _getAprPair();
 
-        uint256 apySub = _computeSubPoolAPY();
+        uint256 subPoolAPY = _computeSubPoolAPY();
 
-        uint256 aprMz;
-        if (apySub > 0) {
+        uint256 apyMz;
+        if (subPoolAPY > 0) {
             uint256 rp2 = _computeRP2();
-            aprMz = rp2 < PRECISION ? apySub.fpMul(PRECISION - rp2) : 0;
+            apyMz = rp2 < PRECISION ? subPoolAPY.fpMul(PRECISION - rp2) : 0;
         }
 
-        return aprMz > aaveBenchmarkAPR ? aprMz : aaveBenchmarkAPR;
+        return apyMz > aaveBenchmarkAPY ? apyMz : aaveBenchmarkAPY;
     }
 
     /**
-     * @dev Compute Junior APY (residual after Senior + Mezz).
+     * @dev Compute Junior APR (residual after Senior + Mezz).
      *      APY_jr = APY_sub + (APY_sub - APY_mz) × TVL_mz / Jr
      *      See MATH_REFERENCE §E8.
      */
-    function _computeJuniorAPR() internal view returns (uint256) {
+    function _computeJuniorAPY() internal view returns (uint256) {
         if (s_juniorBaseTVL == 0) return 0;
 
-        uint256 apySub = _computeSubPoolAPY();
-        if (apySub == 0) return 0;
+        uint256 subPoolAPY = _computeSubPoolAPY();
+        if (subPoolAPY == 0) return 0;
 
-        uint256 apyMz = _computeMezzAPR();
+        uint256 apyMz = _computeMezzAPY();
 
         // APY_jr = APY_sub + (APY_sub - APY_mz) × TVL_mz / Jr
-        if (s_mezzTVL == 0) return apySub;
+        if (s_mezzTVL == 0) return subPoolAPY;
 
         uint256 mezzLeverage = s_mezzTVL.fpDiv(s_juniorBaseTVL);
 
-        if (apySub >= apyMz) {
-            uint256 bonus = (apySub - apyMz).fpMul(mezzLeverage);
-            return apySub + bonus;
+        if (subPoolAPY >= apyMz) {
+            uint256 bonus = (subPoolAPY - apyMz).fpMul(mezzLeverage);
+            return subPoolAPY + bonus;
         }
         return 0;
     }

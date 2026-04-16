@@ -184,9 +184,6 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         else baseAmount = amount;
 
         i_accounting.recordDeposit(tranche, baseAmount);
-
-        // 5. Check junior shortfall
-        _checkJuniorShortfall();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -233,8 +230,6 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         } else {
             result = _withdrawSharesLock(tranche, beneficiary, vaultShares, feeAmount, policy.cooldownDuration);
         }
-
-        _checkJuniorShortfall();
     }
 
     /**
@@ -433,11 +428,19 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
      *      Pushes fresh APR data on every deposit/withdraw — no keeper dependency.
      */
     function _updateAccounting() internal {
-        // Push fresh APR data from provider (requires KEEPER_ROLE on AprPairFeed)
-        try i_aprFeed.updateRoundData() {} catch {}
+        // Push fresh APR data from provider (requires KEEPER_ROLE on AprPairFeed).
+        // Skip if feed not configured (e.g., tests) or not a contract.
+        if (address(i_aprFeed) != address(0) && address(i_aprFeed).code.length > 0) {
+            try i_aprFeed.updateRoundData() {} catch {}
+        }
 
         uint256 strategyTVL = i_strategy.totalAssets();
         i_accounting.updateTVL(strategyTVL);
+
+        // Check shortfall AFTER strategy gain/loss reconciliation but BEFORE any
+        // user-initiated TVL change (deposit/withdraw). This way the check sees
+        // the true post-loss state, not transient mid-withdraw state.
+        _checkJuniorShortfall();
     }
 
     /**

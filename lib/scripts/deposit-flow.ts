@@ -1,9 +1,10 @@
 /**
- * Deposit USD.AI into Senior or Mezzanine tranche.
+ * Deposit USD.AI into any tranche (Senior, Mezz, Junior).
  *
  * Usage:
  *   ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche SENIOR --amount 100
  *   ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche MEZZ --amount 50 --dry-run
+ *   ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche JUNIOR --amount 25
  */
 
 import { parseUnits, formatUnits, type Hash } from "viem";
@@ -23,10 +24,6 @@ async function main() {
   const tranche = parseTranche(parseFlag(args, "--tranche") ?? "SENIOR");
   const amount = parseFlag(args, "--amount") ?? "1";
   const dryRun = hasFlag(args, "--dry-run");
-
-  if (tranche === TrancheId.JUNIOR) {
-    throw new Error("Junior uses deposit-junior-flow.ts");
-  }
 
   const { sdk, publicClient, addresses } = createSDK();
   const { account, walletClient } = createWallet();
@@ -58,7 +55,10 @@ async function main() {
   }
 
   // 4. Approve if needed
-  const vaultAddr = tranche === TrancheId.SENIOR ? addresses.seniorVault : addresses.mezzVault;
+  const vaultAddr =
+    tranche === TrancheId.SENIOR ? addresses.seniorVault
+    : tranche === TrancheId.MEZZ ? addresses.mezzVault
+    : addresses.juniorVault;
   const allowance = await sdk.getTokenAllowance(USDAI, user, vaultAddr);
   if (allowance < depositAmount) {
     console.log(`\n  Approving USD.AI...`);

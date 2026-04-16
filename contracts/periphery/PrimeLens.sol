@@ -82,7 +82,7 @@ contract PrimeLens {
         uint256 totalAssets;
         uint256 totalSupply;
         uint256 sharePrice; // 18 decimals (1e18 = 1:1)
-        uint256 apr; // 18 decimals
+        uint256 apy; // 18 decimals
     }
 
     struct ProtocolHealth {
@@ -300,13 +300,13 @@ contract PrimeLens {
         info.sharePrice = info.totalSupply > 0
             ? (info.totalAssets * PRECISION) / info.totalSupply
             : PRECISION;
-        info.apr = _getAPR(tranche);
+        info.apy = _getAPY(tranche);
     }
 
-    function _getAPR(TrancheId tranche) internal view returns (uint256) {
-        if (tranche == TrancheId.SENIOR) return i_accounting.getSeniorAPR();
-        if (tranche == TrancheId.MEZZ) return i_accounting.getMezzAPR();
-        return i_accounting.getJuniorAPR();
+    function _getAPY(TrancheId tranche) internal view returns (uint256) {
+        if (tranche == TrancheId.SENIOR) return i_accounting.getSeniorAPY();
+        if (tranche == TrancheId.MEZZ) return i_accounting.getMezzAPY();
+        return i_accounting.getJuniorAPY();
     }
 
     function _buildPendingWithdraw(

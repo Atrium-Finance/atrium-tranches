@@ -25,21 +25,7 @@ export const PRIME_CDO_ADMIN_ABI = [
   },
   {
     inputs: [],
-    name: "s_ratioTarget",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "s_ratioTolerance",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "s_ratioController",
+    name: "s_guardian",
     outputs: [{ name: "", type: "address" }],
     stateMutability: "view",
     type: "function",
@@ -49,35 +35,6 @@ export const PRIME_CDO_ADMIN_ABI = [
     name: "owner",
     outputs: [{ name: "", type: "address" }],
     stateMutability: "view",
-    type: "function",
-  },
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  WRITE — Rebalance
-  // ═══════════════════════════════════════════════════════════════════
-  {
-    inputs: [],
-    name: "rebalanceSellWETH",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ name: "maxBaseToRecall", type: "uint256" }],
-    name: "rebalanceBuyWETH",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  WRITE — Loss Coverage
-  // ═══════════════════════════════════════════════════════════════════
-  {
-    inputs: [{ name: "lossUSD", type: "uint256" }],
-    name: "executeWETHCoverage",
-    outputs: [],
-    stateMutability: "nonpayable",
     type: "function",
   },
 
@@ -93,7 +50,7 @@ export const PRIME_CDO_ADMIN_ABI = [
   },
 
   // ═══════════════════════════════════════════════════════════════════
-  //  WRITE — Configuration
+  //  WRITE — Configuration (owner)
   // ═══════════════════════════════════════════════════════════════════
   {
     inputs: [{ name: "minCoverage", type: "uint256" }],
@@ -110,29 +67,8 @@ export const PRIME_CDO_ADMIN_ABI = [
     type: "function",
   },
   {
-    inputs: [],
-    name: "unpauseShortfall",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ name: "target", type: "uint256" }],
-    name: "setRatioTarget",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ name: "tolerance", type: "uint256" }],
-    name: "setRatioTolerance",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ name: "controller", type: "address" }],
-    name: "setRatioController",
+    inputs: [{ name: "guardian_", type: "address" }],
+    name: "setGuardian",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",
@@ -149,28 +85,26 @@ export const PRIME_CDO_ADMIN_ABI = [
   },
 
   // ═══════════════════════════════════════════════════════════════════
-  //  EVENTS
+  //  WRITE — Emergency (owner OR guardian)
   // ═══════════════════════════════════════════════════════════════════
   {
-    anonymous: false,
-    inputs: [
-      { indexed: false, name: "excessWETH", type: "uint256" },
-      { indexed: false, name: "baseReceived", type: "uint256" },
-      { indexed: false, name: "newRatio", type: "uint256" },
-    ],
-    name: "RebalanceSellExecuted",
-    type: "event",
+    inputs: [],
+    name: "unpauseShortfall",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
   },
   {
-    anonymous: false,
-    inputs: [
-      { indexed: false, name: "baseSwapped", type: "uint256" },
-      { indexed: false, name: "wethReceived", type: "uint256" },
-      { indexed: false, name: "newRatio", type: "uint256" },
-    ],
-    name: "RebalanceBuyExecuted",
-    type: "event",
+    inputs: [],
+    name: "triggerShortfallPause",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
   },
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  EVENTS
+  // ═══════════════════════════════════════════════════════════════════
   {
     anonymous: false,
     inputs: [
@@ -184,6 +118,18 @@ export const PRIME_CDO_ADMIN_ABI = [
     anonymous: false,
     inputs: [],
     name: "ShortfallUnpaused",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [{ indexed: true, name: "guardian", type: "address" }],
+    name: "GuardianSet",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [{ indexed: true, name: "guardian", type: "address" }],
+    name: "EmergencyPauseTriggered",
     type: "event",
   },
 ] as const;
@@ -212,13 +158,6 @@ export const ACCOUNTING_ADMIN_ABI = [
   },
   {
     inputs: [],
-    name: "s_juniorWethTVL",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
     name: "s_reserveTVL",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
@@ -233,14 +172,21 @@ export const ACCOUNTING_ADMIN_ABI = [
   },
   {
     inputs: [],
-    name: "getSeniorAPR",
+    name: "getSeniorAPY",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function",
   },
   {
     inputs: [],
-    name: "getMezzAPR",
+    name: "getMezzAPY",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "getJuniorAPY",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function",
@@ -445,55 +391,6 @@ export const REDEMPTION_POLICY_ABI = [
   },
 ] as const;
 
-export const SWAP_FACILITY_ABI = [
-  // READ
-  {
-    inputs: [],
-    name: "s_maxSlippage",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "s_emergencySlippage",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  // WRITE
-  {
-    inputs: [
-      { name: "maxSlippage_", type: "uint256" },
-      { name: "emergencySlippage_", type: "uint256" },
-    ],
-    name: "setSlippage",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { name: "cdo", type: "address" },
-      { name: "authorized", type: "bool" },
-    ],
-    name: "setAuthorizedCDO",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { name: "token", type: "address" },
-      { name: "fee", type: "uint24" },
-    ],
-    name: "setPoolFee",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-] as const;
-
 export const STRATEGY_ADMIN_ABI = [
   {
     inputs: [],
@@ -528,6 +425,20 @@ export const STRATEGY_ADMIN_ABI = [
     name: "isActive",
     outputs: [{ name: "", type: "bool" }],
     stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "s_guardian",
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "guardian_", type: "address" }],
+    name: "setGuardian",
+    outputs: [],
+    stateMutability: "nonpayable",
     type: "function",
   },
 ] as const;

@@ -37,34 +37,18 @@ async function main() {
   const { sdk } = createSDK();
 
   // ─────────────────────────────────────────────────────────────────
-  //  Senior & Mezz Tranches
+  //  Tranches
   // ─────────────────────────────────────────────────────────────────
 
   console.log(`\n  Tranches`);
   console.log(`  ───────────────────────────────────`);
 
-  for (const id of [TrancheId.SENIOR, TrancheId.MEZZ]) {
+  for (const id of [TrancheId.SENIOR, TrancheId.MEZZ, TrancheId.JUNIOR]) {
     const t = await sdk.getTrancheById(id);
     console.log(
-      `  ${id}: ${t.symbol} | assets=${fmtUSD(t.totalAssets)} | supply=${formatUnits(t.totalSupply, 18)} | price=${formatUnits(t.sharePrice, 18)} | APR=${fmtPct(t.apr)}`,
+      `  ${id}: ${t.symbol} | assets=${fmtUSD(t.totalAssets)} | supply=${formatUnits(t.totalSupply, 18)} | price=${formatUnits(t.sharePrice, 18)} | APY=${fmtPct(t.apy)}`,
     );
   }
-
-  // ─────────────────────────────────────────────────────────────────
-  //  Junior Tranche (dual-asset)
-  // ─────────────────────────────────────────────────────────────────
-
-  const jr = await sdk.getJuniorTranche();
-  console.log(
-    `  JUNIOR: ${jr.symbol} | assets=${fmtUSD(jr.totalAssets)} | supply=${formatUnits(jr.totalSupply, 18)} | price=${formatUnits(jr.sharePrice, 18)} | APR=${fmtPct(jr.apr)}`,
-  );
-  console.log(`\n  Junior Position`);
-  console.log(`  ───────────────────────────────────`);
-  console.log(`  Base TVL:  ${fmtUSD(jr.baseTVL)}`);
-  console.log(`  WETH TVL:  ${fmtUSD(jr.wethTVL)}`);
-  console.log(`  WETH:      ${formatUnits(jr.wethAmount, 18)} (${fmtUSD(jr.wethPrice)}/ETH)`);
-  console.log(`  Ratio:     ${fmtPct(jr.currentRatio)} (target 20%)`);
-  console.log(`  Aave APR:  ${fmtPct(jr.aaveAPR)}`);
 
   // ─────────────────────────────────────────────────────────────────
   //  Withdraw Conditions (preview with 1 share)

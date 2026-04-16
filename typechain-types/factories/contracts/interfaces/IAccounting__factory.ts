@@ -47,7 +47,7 @@ const _abi = [
   },
   {
     inputs: [],
-    name: "getJuniorAPR",
+    name: "getJuniorAPY",
     outputs: [
       {
         internalType: "uint256",
@@ -73,7 +73,7 @@ const _abi = [
   },
   {
     inputs: [],
-    name: "getMezzAPR",
+    name: "getMezzAPY",
     outputs: [
       {
         internalType: "uint256",
@@ -86,7 +86,7 @@ const _abi = [
   },
   {
     inputs: [],
-    name: "getSeniorAPR",
+    name: "getSeniorAPY",
     outputs: [
       {
         internalType: "uint256",

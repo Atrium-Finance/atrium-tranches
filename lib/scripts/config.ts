@@ -12,7 +12,6 @@ import type { ContractAddresses } from "../types";
 import "dotenv/config";
 
 export const USDAI = "0x0A1a1A107E45b7Ced86833863f482BC5f4ed82EF";
-export const WETH = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -82,16 +81,14 @@ export function parseTranche(str: string): TrancheId {
   npx tsx lib/scripts/dashboard.ts --user 0x...                                        
   npx tsx lib/scripts/dashboard.ts --rebalance                                         
                                                                                        
-  # Deposit Senior/Mezz                                                                
-  npx tsx lib/scripts/deposit-flow.ts --tranche SENIOR --amount 0.1                    
-  npx tsx lib/scripts/deposit-flow.ts --tranche MEZZ --amount 0.1 --dry-run             
-                                                                                       
-  # Deposit Junior (auto tính WETH)                                                    
-  npx tsx lib/scripts/deposit-junior-flow.ts --amount 0.1                              
-                                                                                       
-  # Withdraw                                                                           
-  npx tsx lib/scripts/withdraw-flow.ts --tranche JUNIOR --shares 100                   
-  npx tsx lib/scripts/withdraw-flow.ts --tranche SENIOR --shares 0.05 --dry-run          
+  # Deposit (any tranche)
+  npx tsx lib/scripts/deposit-flow.ts --tranche SENIOR --amount 0.1
+  npx tsx lib/scripts/deposit-flow.ts --tranche MEZZ --amount 0.1 --dry-run
+  npx tsx lib/scripts/deposit-flow.ts --tranche JUNIOR --amount 0.1
+
+  # Withdraw
+  npx tsx lib/scripts/withdraw-flow.ts --tranche SENIOR --shares 100
+  npx tsx lib/scripts/withdraw-flow.ts --tranche JUNIOR --shares 0.05 --dry-run
                                                                                        
   # Claim (sau cooldown)                                                               
   npx tsx lib/scripts/withdraw-flow.ts --claim --cooldown-id 1 --tranche SENIOR        

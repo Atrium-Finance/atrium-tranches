@@ -5,11 +5,14 @@ export const ARBITRUM = {
   SUSDAI: "0x0B2b2B2076d95dda7817e785989fE353fe955ef9",
   USDAI: "0x0A1a1A107E45b7Ced86833863f482BC5f4ed82EF",
   AAVE_V3_POOL: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
-  WETH: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-  CHAINLINK_ETH_USD: "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
-  UNISWAP_V3_ROUTER: "0xE592427A0AEce92De3Edee1F18E0157C05861564",
-  UNISWAP_V3_QUOTER: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  // Aave benchmark tokens on Arbitrum (used by SUSDaiAprPairProvider for aprTarget)
+  USDC: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // native USDC
+  USDT: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+  DAI: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
 } as const;
+
+/** @notice Stablecoin set used as Aave benchmark for sUSDai aprTarget */
+export const AAVE_BENCHMARK_TOKENS = [ARBITRUM.USDC, ARBITRUM.USDT] as const;
 
 /**
  * Default protocol parameters for MVP deployment.
@@ -19,6 +22,15 @@ export const DEFAULTS = {
   SHORTFALL_PAUSE_PRICE: BigInt("900000000000000000"), // 0.90e18 = 90%
   APR_STALE_AFTER: 30 * 86_400, // 30 days
   PRIMELOCK_DELAY: 24 * 3_600, // 24 hours — governance delay (hardcoded in PrimeLock.sol)
+} as const;
+
+/**
+ * SHORT cooldown durations for mainnet end-to-end testing.
+ * Set TEST_MODE=1 in env to apply these instead of production defaults (3d/7d).
+ */
+export const TEST_COOLDOWNS = {
+  ASSETS_LOCK: 3 * 60, // 3 minutes
+  SHARES_LOCK: 5 * 60, // 5 minutes
 } as const;
 
 /**

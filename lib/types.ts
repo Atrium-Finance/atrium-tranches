@@ -20,14 +20,12 @@ export interface ContractAddresses {
   primeLens: string;
   accounting: string;
   strategy: string;
-  aaveAdapter?: string;
-  wethPriceOracle?: string;
-  swapFacility?: string;
   erc20Cooldown?: string;
   sharesCooldown?: string;
   redemptionPolicy?: string;
   aprFeed?: string;
   riskParams?: string;
+  primeLock?: string;
 }
 
 export interface TrancheInfo {
@@ -39,16 +37,7 @@ export interface TrancheInfo {
   totalSupply: bigint;
   sharePrice: bigint;
   asset: string;
-  apr: bigint;
-}
-
-export interface JuniorTrancheInfo extends TrancheInfo {
-  baseTVL: bigint;
-  wethTVL: bigint;
-  wethAmount: bigint;
-  wethPrice: bigint;
-  currentRatio: bigint;
-  aaveAPR: bigint;
+  apy: bigint;
 }
 
 export interface PreviewDeposit {
@@ -56,14 +45,6 @@ export interface PreviewDeposit {
   shares: bigint;
   sharePrice: bigint;
   totalBaseValue: bigint;
-}
-
-export interface PreviewJuniorDeposit extends PreviewDeposit {
-  baseAmount: bigint;
-  wethAmount: bigint;
-  wethValueUSD: bigint;
-  wethPrice: bigint;
-  wethRatio: bigint;
 }
 
 export interface PreviewWithdraw {
@@ -74,20 +55,6 @@ export interface PreviewWithdraw {
   feeAmount: bigint;
   netBaseAmount: bigint;
   baseAmountOut: bigint;
-  /** Junior only: proportional WETH returned */
-  wethAmount: bigint;
-  /** Junior only: WETH USD value */
-  wethValueUSD: bigint;
-}
-
-export interface JuniorPosition {
-  baseTVL: bigint;
-  wethTVL: bigint;
-  totalTVL: bigint;
-  wethAmount: bigint;
-  wethPrice: bigint;
-  currentRatio: bigint;
-  aaveAPR: bigint;
 }
 
 export interface ProtocolHealth {
@@ -123,22 +90,10 @@ export interface WithdrawCondition {
   coverageMezz: bigint;
 }
 
-export interface RebalanceStatus {
-  currentRatio: bigint;
-  targetRatio: bigint;
-  tolerance: bigint;
-  wethAmount: bigint;
-  wethValueUSD: bigint;
-  wethPrice: bigint;
-  needsSell: boolean;
-  needsBuy: boolean;
-  excessOrDeficitUSD: bigint;
-}
-
 /** @notice Cooldown mechanism applied to a withdrawal (mirrors Solidity enum) */
 export enum CooldownType {
   NONE = 0, // instant withdrawal
-  ASSETS_LOCK = 1, // sUSDai/WETH locked in ERC20Cooldown
+  ASSETS_LOCK = 1, // sUSDai locked in ERC20Cooldown
   SHARES_LOCK = 2, // vault shares escrowed in SharesCooldown
 }
 
@@ -150,19 +105,6 @@ export interface CDOWithdrawResult {
   unlockTime: bigint;
   feeAmount: bigint;
   appliedCooldownType: CooldownType;
-  wethAmount: bigint;
-  wethCooldownId: bigint;
-}
-
-export interface EstimateJuniorWithdraw {
-  baseAmount: bigint;
-  feeBps: bigint;
-  feeAmount: bigint;
-  netBaseAmount: bigint;
-  wethAmount: bigint;
-  wethValueUSD: bigint;
-  mechanism: number;
-  cooldownDuration: bigint;
 }
 
 export interface WriteResult {
@@ -187,7 +129,6 @@ export interface WithdrawRequestResult extends WriteResult {
         cooldownId: bigint;
         cooldownHandler: string;
         unlockTime: bigint;
-        wethCooldownId: bigint;
       }
     | { type: "CLAIM_SHARES"; cooldownId: bigint; unlockTime: bigint };
 }

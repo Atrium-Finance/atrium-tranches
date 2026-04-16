@@ -1,17 +1,14 @@
 import { createPublicClient, http, type PublicClient, type Address } from "viem";
-import { PRIME_LENS_ABI, TRANCHE_VAULT_ABI, ACCOUNTING_ABI, PRIME_CDO_ABI, ERC20_ABI } from "./abis";
+import { PRIME_LENS_ABI, TRANCHE_VAULT_ABI, ACCOUNTING_ABI, ERC20_ABI } from "./abis";
 import { CooldownType, TrancheId } from "./types";
 import type {
   PrimeVaultsConfig,
   ContractAddresses,
   TrancheInfo,
-  JuniorTrancheInfo,
   PreviewDeposit,
-  PreviewJuniorDeposit,
   PreviewWithdraw,
   PendingWithdraw,
   ProtocolHealth,
-  RebalanceStatus,
   UserPortfolio,
 } from "./types";
 
@@ -36,13 +33,13 @@ export class PrimeVaultsSDK {
   // ═══════════════════════════════════════════════════════════════════
 
   /**
-   * Get tranche info by ID: trancheId, totalAssets, totalSupply, sharePrice, asset, apr.
-   * For Junior-specific data (WETH, ratio, etc.), use getJuniorTranche() instead.
+   * Get tranche info by ID: trancheId, totalAssets, totalSupply, sharePrice, asset, apy.
+   * Works for SENIOR, MEZZ, and JUNIOR — all tranches are base-asset only.
    */
   async getTrancheById(trancheId: TrancheId): Promise<TrancheInfo> {
     const vaultAddr = this._getVaultAddress(trancheId);
-    const aprFn =
-      trancheId === TrancheId.SENIOR ? "getSeniorAPR" : trancheId === TrancheId.MEZZ ? "getMezzAPR" : "getJuniorAPR";
+    const apyFn =
+      trancheId === TrancheId.SENIOR ? "getSeniorAPY" : trancheId === TrancheId.MEZZ ? "getMezzAPY" : "getJuniorAPY";
 
     const results = await this.publicClient.multicall({
       contracts: [
@@ -52,12 +49,12 @@ export class PrimeVaultsSDK {
           functionName: "getTrancheInfo",
           args: [trancheId],
         },
-        { address: this.addresses.accounting as Address, abi: ACCOUNTING_ABI, functionName: aprFn },
+        { address: this.addresses.accounting as Address, abi: ACCOUNTING_ABI, functionName: apyFn },
         { address: vaultAddr as Address, abi: TRANCHE_VAULT_ABI, functionName: "asset" },
       ],
     });
 
-    const [lensResult, aprResult, assetResult] = results;
+    const [lensResult, apyResult, assetResult] = results;
     if (lensResult.status !== "success") throw new Error(`getTrancheInfo(${trancheId}) failed`);
 
     const info = lensResult.result as any;
@@ -70,7 +67,7 @@ export class PrimeVaultsSDK {
       totalSupply: info.totalSupply,
       sharePrice: info.sharePrice,
       asset: assetResult.status === "success" ? (assetResult.result as string) : "",
-      apr: aprResult.status === "success" ? (aprResult.result as bigint) : 0n,
+      apy: apyResult.status === "success" ? (apyResult.result as bigint) : 0n,
     };
   }
 
@@ -79,12 +76,9 @@ export class PrimeVaultsSDK {
   // ═══════════════════════════════════════════════════════════════════
 
   /**
-   * Preview deposit for Senior or Mezzanine: how many shares for a given base amount.
-   * For Junior, use previewJuniorDeposit() instead.
+   * Preview deposit for any tranche: how many shares for a given base amount.
    */
   async previewDeposit(trancheId: TrancheId, amount: bigint): Promise<PreviewDeposit> {
-    if (trancheId === TrancheId.JUNIOR) throw new Error("Use previewJuniorDeposit() for Junior");
-
     const vaultAddr = this._getVaultAddress(trancheId);
     const results = await this.publicClient.multicall({
       contracts: [
@@ -102,76 +96,13 @@ export class PrimeVaultsSDK {
     return { trancheId, shares, sharePrice, totalBaseValue: amount };
   }
 
-  /**
-   * Preview Junior dual-asset deposit: computes shares, WETH valuation, ratio.
-   * If wethAmount omitted, auto-computes from ratioTarget via getWethNeeded logic.
-   * @param baseAmount Base asset amount (18 decimals)
-   * @param wethAmount WETH amount (18 decimals). If omitted, computed from ratio target.
-   */
-  async previewJuniorDeposit(baseAmount: bigint, wethAmount?: bigint): Promise<PreviewJuniorDeposit> {
-    const state = await this._fetchJuniorDepositState();
-
-    // Auto-compute wethAmount if not provided
-    if (wethAmount === undefined) {
-      const { ratioTarget, wethPrice } = state;
-      if (ratioTarget > 0n && ratioTarget < PRECISION && wethPrice > 0n) {
-        const wethValueUSD = (baseAmount * ratioTarget) / (PRECISION - ratioTarget);
-        wethAmount = (wethValueUSD * PRECISION) / wethPrice;
-      } else {
-        wethAmount = 0n;
-      }
-    }
-
-    const wethValueUSD = (wethAmount * state.wethPrice) / PRECISION;
-    const totalBaseValue = baseAmount + wethValueUSD;
-
-    // Share calculation (same as TrancheVault.depositJunior: pre-deposit snapshot)
-    const sharePrice = state.totalSupply > 0n ? (state.totalAssets * PRECISION) / state.totalSupply : PRECISION;
-    const shares = state.totalSupply > 0n ? (totalBaseValue * state.totalSupply) / state.totalAssets : totalBaseValue;
-
-    // Ratio
-    const wethRatio = totalBaseValue > 0n ? (wethValueUSD * PRECISION) / totalBaseValue : 0n;
-
-    return {
-      trancheId: TrancheId.JUNIOR,
-      shares,
-      sharePrice,
-      totalBaseValue,
-      baseAmount,
-      wethAmount,
-      wethValueUSD,
-      wethPrice: state.wethPrice,
-      wethRatio,
-    };
-  }
-
-  /**
-   * Given a base deposit amount, compute how much WETH is needed to match the ratio target.
-   * @param baseAmount Base asset amount (18 decimals)
-   */
-  async getWethNeeded(
-    baseAmount: bigint,
-  ): Promise<{ wethNeeded: bigint; wethValueUSD: bigint; wethPrice: bigint; ratioTarget: bigint }> {
-    const state = await this._fetchJuniorDepositState();
-    const { ratioTarget, wethPrice } = state;
-
-    if (ratioTarget === 0n || ratioTarget >= PRECISION || wethPrice === 0n) {
-      return { wethNeeded: 0n, wethValueUSD: 0n, wethPrice, ratioTarget };
-    }
-
-    const wethValueUSD = (baseAmount * ratioTarget) / (PRECISION - ratioTarget);
-    const wethNeeded = (wethValueUSD * PRECISION) / wethPrice;
-
-    return { wethNeeded, wethValueUSD, wethPrice, ratioTarget };
-  }
-
   // ═══════════════════════════════════════════════════════════════════
   //  READ — Preview Withdraw
   // ═══════════════════════════════════════════════════════════════════
 
   /**
    * Preview withdrawal: given shares, returns mechanism (lock type), cooldown duration,
-   * fee, net base amount out, and for Junior: proportional WETH.
+   * fee, net base amount out.
    * @param trancheId Tranche to withdraw from
    * @param shares Vault shares to redeem (18 decimals)
    */
@@ -179,27 +110,17 @@ export class PrimeVaultsSDK {
     const trancheNum = trancheId as number;
     const vaultAddr = this._getVaultAddress(trancheId);
 
-    const contracts: any[] = [
-      // convertToAssets: how much base for these shares
-      { address: vaultAddr as Address, abi: TRANCHE_VAULT_ABI, functionName: "convertToAssets", args: [shares] },
-      // RedemptionPolicy via PrimeLens: mechanism, fee, duration
-      {
-        address: this.addresses.primeLens as Address,
-        abi: PRIME_LENS_ABI,
-        functionName: "previewWithdrawCondition",
-        args: [trancheNum],
-      },
-    ];
-
-    // Junior: also fetch WETH position for proportional calc
-    if (trancheId === TrancheId.JUNIOR) {
-      contracts.push(
-        { address: this.addresses.primeLens as Address, abi: PRIME_LENS_ABI, functionName: "getJuniorPosition" },
-        { address: vaultAddr as Address, abi: TRANCHE_VAULT_ABI, functionName: "totalSupply" },
-      );
-    }
-
-    const results = await this.publicClient.multicall({ contracts });
+    const results = await this.publicClient.multicall({
+      contracts: [
+        { address: vaultAddr as Address, abi: TRANCHE_VAULT_ABI, functionName: "convertToAssets", args: [shares] },
+        {
+          address: this.addresses.primeLens as Address,
+          abi: PRIME_LENS_ABI,
+          functionName: "previewWithdrawCondition",
+          args: [trancheNum],
+        },
+      ],
+    });
 
     const baseAmountOut = results[0].status === "success" ? (results[0].result as bigint) : 0n;
     const cond = results[1].status === "success" ? (results[1].result as any) : null;
@@ -211,20 +132,6 @@ export class PrimeVaultsSDK {
     const feeAmount = (baseAmountOut * feeBps) / 10_000n;
     const netBaseAmount = baseAmountOut - feeAmount;
 
-    // Junior: proportional WETH = totalWeth × shares / totalSupply
-    let wethAmount = 0n;
-    let wethValueUSD = 0n;
-
-    if (trancheId === TrancheId.JUNIOR && results.length > 3) {
-      const pos = results[2].status === "success" ? (results[2].result as any) : null;
-      const totalSupply = results[3].status === "success" ? (results[3].result as bigint) : 0n;
-
-      if (pos && totalSupply > 0n) {
-        wethAmount = (pos.wethAmount * shares) / totalSupply;
-        wethValueUSD = (wethAmount * pos.wethPrice) / PRECISION;
-      }
-    }
-
     return {
       trancheId,
       mechanism,
@@ -233,8 +140,6 @@ export class PrimeVaultsSDK {
       feeAmount,
       netBaseAmount,
       baseAmountOut,
-      wethAmount,
-      wethValueUSD,
     };
   }
 
@@ -344,29 +249,8 @@ export class PrimeVaultsSDK {
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  //  READ — Rebalance & Portfolio
+  //  READ — Portfolio
   // ═══════════════════════════════════════════════════════════════════
-
-  /** Get WETH rebalance status: current ratio, target, needs sell/buy. */
-  async getRebalanceStatus(): Promise<RebalanceStatus> {
-    const result = await this.publicClient.readContract({
-      address: this.addresses.primeLens as Address,
-      abi: PRIME_LENS_ABI,
-      functionName: "getWETHRebalanceStatus",
-    });
-    const s = result as any;
-    return {
-      currentRatio: s.currentRatio,
-      targetRatio: s.targetRatio,
-      tolerance: s.tolerance,
-      wethAmount: s.wethAmount,
-      wethValueUSD: s.wethValueUSD,
-      wethPrice: s.wethPrice,
-      needsSell: s.needsSell,
-      needsBuy: s.needsBuy,
-      excessOrDeficitUSD: s.excessOrDeficitUSD,
-    };
-  }
 
   /** Get aggregated user portfolio across all 3 tranches. */
   async getUserPortfolio(user: string): Promise<UserPortfolio> {
@@ -412,75 +296,5 @@ export class PrimeVaultsSDK {
     if (trancheId === TrancheId.SENIOR) return this.addresses.seniorVault;
     if (trancheId === TrancheId.MEZZ) return this.addresses.mezzVault;
     return this.addresses.juniorVault;
-  }
-
-  /** Shared state fetch for previewJuniorDeposit + getWethNeeded (1 multicall, 4 reads). */
-  private async _fetchJuniorDepositState(): Promise<{
-    totalAssets: bigint;
-    totalSupply: bigint;
-    wethPrice: bigint;
-    ratioTarget: bigint;
-  }> {
-    const results = await this.publicClient.multicall({
-      contracts: [
-        { address: this.addresses.juniorVault as Address, abi: TRANCHE_VAULT_ABI, functionName: "totalAssets" },
-        { address: this.addresses.juniorVault as Address, abi: TRANCHE_VAULT_ABI, functionName: "totalSupply" },
-        { address: this.addresses.primeLens as Address, abi: PRIME_LENS_ABI, functionName: "getJuniorPosition" },
-        { address: this.addresses.primeCDO as Address, abi: PRIME_CDO_ABI, functionName: "s_ratioTarget" },
-      ],
-    });
-
-    const totalAssets = results[0].status === "success" ? (results[0].result as bigint) : 0n;
-    const totalSupply = results[1].status === "success" ? (results[1].result as bigint) : 0n;
-    const pos = results[2].status === "success" ? (results[2].result as any) : null;
-    const ratioTarget = results[3].status === "success" ? (results[3].result as bigint) : 0n;
-
-    return { totalAssets, totalSupply, wethPrice: pos ? pos.wethPrice : 0n, ratioTarget };
-  }
-
-  /**
-   * Get Junior tranche info with dual-asset details: base TVL, WETH TVL, ratio, Aave APR, etc.
-   * Batches PrimeLens tranche info + Junior position + Accounting APR + vault asset in one multicall.
-   */
-  async getJuniorTranche(): Promise<JuniorTrancheInfo> {
-    const results = await this.publicClient.multicall({
-      contracts: [
-        {
-          address: this.addresses.primeLens as Address,
-          abi: PRIME_LENS_ABI,
-          functionName: "getTrancheInfo",
-          args: [2],
-        },
-        { address: this.addresses.primeLens as Address, abi: PRIME_LENS_ABI, functionName: "getJuniorPosition" },
-        { address: this.addresses.accounting as Address, abi: ACCOUNTING_ABI, functionName: "getJuniorAPR" },
-        { address: this.addresses.juniorVault as Address, abi: TRANCHE_VAULT_ABI, functionName: "asset" },
-      ],
-    });
-
-    const [lensResult, posResult, aprResult, assetResult] = results;
-
-    if (lensResult.status !== "success") throw new Error("getTrancheInfo(JUNIOR) failed");
-    if (posResult.status !== "success") throw new Error("getJuniorPosition failed");
-
-    const info = lensResult.result as any;
-    const pos = posResult.result as any;
-
-    return {
-      trancheId: TrancheId.JUNIOR,
-      vault: info.vault,
-      name: info.name,
-      symbol: info.symbol,
-      totalAssets: info.totalAssets,
-      totalSupply: info.totalSupply,
-      sharePrice: info.sharePrice,
-      asset: assetResult.status === "success" ? (assetResult.result as string) : "",
-      apr: aprResult.status === "success" ? (aprResult.result as bigint) : 0n,
-      baseTVL: pos.baseTVL,
-      wethTVL: pos.wethTVL,
-      wethAmount: pos.wethAmount,
-      wethPrice: pos.wethPrice,
-      currentRatio: pos.currentRatio,
-      aaveAPR: pos.aaveAPR,
-    };
   }
 }

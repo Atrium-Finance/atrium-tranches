@@ -2,13 +2,13 @@
  * Deploy Step 02 — sUSDai Market contracts
  *
  * Deploys: SUSDaiAprPairProvider, AprPairFeed, Accounting, RedemptionPolicy,
- *          SUSDaiStrategy, AaveWETHAdapter, PrimeCDO, TrancheVault × 3
+ *          SUSDaiStrategy, PrimeCDO, TrancheVault × 3
  *
  * Requires: deploy/01_deploy_shared.ts has been run (reads deployed.json).
  *
- * Note: Strategy, Adapter, and CDO form a circular dependency (Strategy/Adapter
- *       need CDO address in constructor). We predict CDO address via CREATE nonce.
- *       Deploy order: Strategy(+0) → Adapter(+1) → CDO(+2).
+ * Note: Strategy and CDO form a circular dependency (Strategy needs CDO address
+ *       in constructor). We predict CDO address via CREATE nonce.
+ *       Deploy order: Strategy(+0) → CDO(+1).
  *
  * Usage:
  *   npx hardhat run deploy/02_deploy_market.ts --network arbitrum
@@ -16,7 +16,7 @@
 
 import hre from "hardhat";
 import "@nomicfoundation/hardhat-ethers";
-import { ARBITRUM, DEFAULTS, loadDeployed, saveDeployed } from "./addresses";
+import { ARBITRUM, AAVE_BENCHMARK_TOKENS, DEFAULTS, loadDeployed, saveDeployed } from "./addresses";
 
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
@@ -29,7 +29,11 @@ async function main() {
   // ═══════════════════════════════════════════════════════════════════
 
   const ProviderFactory = await hre.ethers.getContractFactory("SUSDaiAprPairProvider");
-  const aprProvider = await ProviderFactory.deploy(ARBITRUM.AAVE_V3_POOL, [ARBITRUM.USDAI], ARBITRUM.SUSDAI);
+  const aprProvider = await ProviderFactory.deploy(
+    ARBITRUM.AAVE_V3_POOL,
+    [...AAVE_BENCHMARK_TOKENS], // USDC + USDT + DAI on Arbitrum
+    ARBITRUM.SUSDAI,
+  );
   await aprProvider.waitForDeployment();
   const aprProviderAddr = await aprProvider.getAddress();
   console.log(`  AprProvider:       ${aprProviderAddr}`);
@@ -65,11 +69,11 @@ async function main() {
   console.log(`  RedemptionPolicy:  ${redemptionPolicyAddr}`);
 
   // ═══════════════════════════════════════════════════════════════════
-  //  5. Predict CDO address: Strategy(+0), Adapter(+1), CDO(+2)
+  //  5. Predict CDO address: Strategy(+0), CDO(+1)
   // ═══════════════════════════════════════════════════════════════════
 
   const nonceBefore = await hre.ethers.provider.getTransactionCount(deployer.address);
-  const predictedCDO = hre.ethers.getCreateAddress({ from: deployer.address, nonce: nonceBefore + 2 });
+  const predictedCDO = hre.ethers.getCreateAddress({ from: deployer.address, nonce: nonceBefore + 1 });
   console.log(`  PrimeCDO (pred):   ${predictedCDO}`);
 
   // ═══════════════════════════════════════════════════════════════════
@@ -77,37 +81,20 @@ async function main() {
   // ═══════════════════════════════════════════════════════════════════
 
   const StratFactory = await hre.ethers.getContractFactory("SUSDaiStrategy");
-  const strategy = await StratFactory.deploy(
-    predictedCDO, ARBITRUM.USDAI, ARBITRUM.SUSDAI, deployer.address,
-  );
+  const strategy = await StratFactory.deploy(predictedCDO, ARBITRUM.SUSDAI, deployer.address);
   await strategy.waitForDeployment();
   const strategyAddr = await strategy.getAddress();
   console.log(`  SUSDaiStrategy:    ${strategyAddr}`);
 
   // ═══════════════════════════════════════════════════════════════════
-  //  7. AaveWETHAdapter
-  // ═══════════════════════════════════════════════════════════════════
-
-  const AdapterFactory = await hre.ethers.getContractFactory("AaveWETHAdapter");
-  const aaveAdapter = await AdapterFactory.deploy(
-    ARBITRUM.AAVE_V3_POOL, ARBITRUM.WETH, shared.wethPriceOracle, predictedCDO,
-  );
-  await aaveAdapter.waitForDeployment();
-  const aaveAdapterAddr = await aaveAdapter.getAddress();
-  console.log(`  AaveWETHAdapter:   ${aaveAdapterAddr}`);
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  8. PrimeCDO
+  //  7. PrimeCDO
   // ═══════════════════════════════════════════════════════════════════
 
   const CDOFactory = await hre.ethers.getContractFactory("PrimeCDO");
   const primeCDO = await CDOFactory.deploy(
     accountingAddr,
     strategyAddr,
-    aaveAdapterAddr,
-    shared.wethPriceOracle,
-    shared.swapFacility,
-    ARBITRUM.WETH,
+    aprFeedAddr,
     redemptionPolicyAddr,
     shared.erc20Cooldown,
     shared.sharesCooldown,
@@ -123,28 +110,22 @@ async function main() {
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  //  9. TrancheVault × 3
+  //  8. TrancheVault × 3
   // ═══════════════════════════════════════════════════════════════════
 
   const VaultFactory = await hre.ethers.getContractFactory("TrancheVault");
 
-  const seniorVault = await VaultFactory.deploy(
-    primeCDOAddr, 0, ARBITRUM.USDAI, ARBITRUM.WETH, "Prime Senior sUSDai", "srUSDai",
-  );
+  const seniorVault = await VaultFactory.deploy(primeCDOAddr, 0, ARBITRUM.USDAI, "Prime Senior sUSDai", "srUSDai");
   await seniorVault.waitForDeployment();
   const seniorVaultAddr = await seniorVault.getAddress();
   console.log(`  SeniorVault:       ${seniorVaultAddr}`);
 
-  const mezzVault = await VaultFactory.deploy(
-    primeCDOAddr, 1, ARBITRUM.USDAI, ARBITRUM.WETH, "Prime Mezzanine sUSDai", "mzUSDai",
-  );
+  const mezzVault = await VaultFactory.deploy(primeCDOAddr, 1, ARBITRUM.USDAI, "Prime Mezzanine sUSDai", "mzUSDai");
   await mezzVault.waitForDeployment();
   const mezzVaultAddr = await mezzVault.getAddress();
   console.log(`  MezzVault:         ${mezzVaultAddr}`);
 
-  const juniorVault = await VaultFactory.deploy(
-    primeCDOAddr, 2, ARBITRUM.USDAI, ARBITRUM.WETH, "Prime Junior sUSDai", "jrUSDai",
-  );
+  const juniorVault = await VaultFactory.deploy(primeCDOAddr, 2, ARBITRUM.USDAI, "Prime Junior sUSDai", "jrUSDai");
   await juniorVault.waitForDeployment();
   const juniorVaultAddr = await juniorVault.getAddress();
   console.log(`  JuniorVault:       ${juniorVaultAddr}`);
@@ -158,7 +139,6 @@ async function main() {
     aprFeed: aprFeedAddr,
     accounting: accountingAddr,
     strategy: strategyAddr,
-    aaveAdapter: aaveAdapterAddr,
     redemptionPolicy: redemptionPolicyAddr,
     primeCDO: primeCDOAddr,
     seniorVault: seniorVaultAddr,

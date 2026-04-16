@@ -13,7 +13,7 @@ import {TrancheId} from "./IPrimeCDO.sol";
  * @title IAccounting
  * @notice Interface for the Accounting contract
  * @dev Tracks per-tranche TVL (Senior, Mezzanine, Junior).
- *      Splits gains: Senior gets target APR, Mezz gets MAX(floor, subPoolAPY*(1-RP2)), Junior gets residual.
+ *      Splits gains: Senior gets target APY, Mezz gets MAX(floor, subPoolAPY*(1-RP2)), Junior gets residual.
  *      Loss waterfall: Junior → Mezzanine → Senior.
  *      See MATH_REFERENCE §E5 for gain splitting and §E9 for loss waterfall.
  */
@@ -89,26 +89,26 @@ interface IAccounting {
     function getAllTVLs() external view returns (uint256 sr, uint256 mz, uint256 jr);
 
     /**
-     * @notice Get the current computed Senior APR
+     * @notice Get the current computed Senior APY
      * @dev Computed from risk premium curves and APR feed.
-     *      Formula: APR_sr = MAX(APR_target, APR_base × (1 - RP1 - alpha × RP2))
+     *      Formula: APY_sr = MAX(aaveBenchmark, baseAPY × (1 - RP1))
      *      See MATH_REFERENCE §E5.
-     * @return Senior APR as 18-decimal fixed-point
+     * @return Senior APY as 18-decimal fixed-point
      */
-    function getSeniorAPR() external view returns (uint256);
+    function getSeniorAPY() external view returns (uint256);
 
     /**
-     * @notice Get the current computed Mezzanine APR
-     * @dev APR_mz = MAX(aprBase, subPoolAPY * (1 - RP2)) where aprBase = Aave benchmark.
-     * @return Mezzanine APR as 18-decimal fixed-point
+     * @notice Get the current computed Mezzanine APY
+     * @dev APY_mz = MAX(aaveBenchmark, subPoolAPY × (1 - RP2)).
+     * @return Mezzanine APY as 18-decimal fixed-point
      */
-    function getMezzAPR() external view returns (uint256);
+    function getMezzAPY() external view returns (uint256);
 
     /**
-     * @notice Get the current computed Junior residual APR
+     * @notice Get the current computed Junior residual APY
      * @dev Residual = net strategy yield - Senior claim - Mezz claim, divided by Junior TVL.
      *      See MATH_REFERENCE §C5.
-     * @return Junior residual APR as 18-decimal fixed-point
+     * @return Junior residual APY as 18-decimal fixed-point
      */
-    function getJuniorAPR() external view returns (uint256);
+    function getJuniorAPY() external view returns (uint256);
 }

@@ -1,285 +1,254 @@
-# primevaults-sdk
+# PrimeVaults SDK
 
-TypeScript SDK for interacting with PrimeVaults V3 — a 3-tranche structured yield protocol on Arbitrum.
+TypeScript SDK for **PrimeVaults V2** — a 3-tranche structured yield protocol on Arbitrum. All three tranches (Senior, Mezzanine, Junior) are base-asset only (USD.AI) and share the same deposit/withdraw API.
 
 ## Installation
 
 ```bash
-npm install primevaults-sdk
+npm install primevaults-sdk viem
 # or
-pnpm add primevaults-sdk
+pnpm add primevaults-sdk viem
 ```
 
-### Peer Dependency
-
-The SDK requires `viem` >= 2.0.0:
+Build from source:
 
 ```bash
-pnpm add viem
-```
-
-## Build (from source)
-
-```bash
-cd lib
+git clone https://github.com/your-org/primevaults
+cd primevaults/lib
 pnpm install
-pnpm build       # Build CJS + ESM + types into dist/
-pnpm dev         # Watch mode
-pnpm typecheck   # TypeScript check
+pnpm build
 ```
 
-## Usage
-
-### 1. Initialize the SDK
+## Quick Start
 
 ```ts
-import { PrimeVaultsSDK } from "primevaults-sdk";
+import { PrimeVaultsSDK, TrancheId } from "primevaults-sdk";
+import { arbitrum } from "viem/chains";
 
 const sdk = new PrimeVaultsSDK({
   rpcUrl: "https://arb1.arbitrum.io/rpc",
-  chainId: 42161,
+  chain: arbitrum,
   addresses: {
     primeCDO: "0x...",
     seniorVault: "0x...",
     mezzVault: "0x...",
     juniorVault: "0x...",
-    primeLens: "0x...", // required for aggregated view functions
+    primeLens: "0x...",
+    accounting: "0x...",
+    strategy: "0x...",
+    // optional
+    erc20Cooldown: "0x...",
+    sharesCooldown: "0x...",
+    redemptionPolicy: "0x...",
+    aprFeed: "0x...",
+    riskParams: "0x...",
+    primeLock: "0x...",
   },
 });
 ```
 
-**Note:** The 4 required addresses are `primeCDO`, `seniorVault`, `mezzVault`, `juniorVault`. All others (`primeLens`, `accounting`, `strategy`, ...) are optional — see `types.ts > ContractAddresses` for the full list.
+## Read API
 
-### 2. Read Operations
-
-#### Protocol Health
+### Protocol Health
 
 ```ts
 const health = await sdk.getProtocolHealth();
-console.log("Total TVL:", sdk.formatAmount(health.totalTVL));
-console.log("Senior Coverage:", sdk.formatRatio(health.coverageSenior));
-console.log("Paused:", health.shortfallPaused);
+// { seniorTVL, mezzTVL, juniorTVL, totalTVL, coverageSenior, coverageMezz,
+//   minCoverageForDeposit, shortfallPaused, juniorShortfallPausePrice, strategyTVL }
 ```
 
-#### All Tranches
+### Tranches (with APY)
 
 ```ts
-const { senior, mezz, junior } = await sdk.getAllTranches();
-console.log("Senior share price:", sdk.formatSharePrice(senior.sharePrice));
-console.log("Junior total assets:", sdk.formatAmount(junior.totalAssets));
+// One tranche
+const senior = await sdk.getTrancheById(TrancheId.SENIOR);
+console.log(senior.apy); // 18 decimals — divide by 1e18 for percent
+
+// All three (single multicall)
+const senior = await sdk.getTrancheById(TrancheId.SENIOR);
+const mezz   = await sdk.getTrancheById(TrancheId.MEZZ);
+const junior = await sdk.getTrancheById(TrancheId.JUNIOR);
 ```
 
-#### Junior WETH Position
+`TrancheInfo` fields: `trancheId`, `vault`, `name`, `symbol`, `totalAssets`, `totalSupply`, `sharePrice`, `asset`, `apy`.
+
+### User Portfolio
 
 ```ts
-const pos = await sdk.getJuniorPosition();
-console.log("WETH ratio:", sdk.formatRatio(pos.currentRatio));
-console.log("WETH amount:", sdk.formatAmount(pos.wethAmount));
-console.log("Aave APR:", sdk.formatRatio(pos.aaveAPR));
+const portfolio = await sdk.getUserPortfolio("0xUser...");
+// { senior: { shares, assets }, mezz: {...}, junior: {...}, totalAssetsUSD }
 ```
 
-#### User Portfolio
+### Preview Withdraw
 
 ```ts
-const portfolio = await sdk.getUserPortfolio("0xUserAddress");
-console.log("Senior:", sdk.formatAmount(portfolio.senior.assets));
-console.log("Junior:", sdk.formatAmount(portfolio.junior.assets));
-console.log("Total:", sdk.formatAmount(portfolio.totalAssetsUSD));
+const preview = await sdk.previewWithdraw(TrancheId.MEZZ, sharesToBurn);
+// { mechanism (NONE/ASSETS_LOCK/SHARES_LOCK), feeBps, cooldownDuration,
+//   feeAmount, netBaseAmount, baseAmountOut }
 ```
 
-#### WETH Rebalance Status
+### Pending Withdrawals
 
 ```ts
-const status = await sdk.getWETHRebalanceStatus();
-console.log("Needs sell:", status.needsSell);
-console.log("Needs buy:", status.needsBuy);
-console.log("Excess/Deficit:", sdk.formatAmount(status.excessOrDeficitUSD));
+const pending = await sdk.getUserWithdrawRequests("0xUser...");
+// PendingWithdraw[] with isClaimable + timeRemaining
 ```
 
-#### Withdraw Conditions
+### Misc
 
 ```ts
-const cond = await sdk.previewWithdrawCondition("SENIOR");
-// mechanism: 0=NONE (instant), 1=ASSETS_LOCK, 2=SHARES_LOCK
-console.log("Mechanism:", cond.mechanism);
-console.log("Fee:", sdk.formatBps(cond.feeBps));
-console.log("Cooldown:", Number(cond.cooldownDuration) / 3600, "hours");
+await sdk.getShareBalance(TrancheId.SENIOR, user);
+await sdk.previewRedeem(TrancheId.SENIOR, shares);
+await sdk.getTokenBalance(usdAiAddress, user);
+await sdk.getTokenAllowance(usdAiAddress, owner, spender);
 ```
 
-#### Pending & Claimable Withdrawals
+## Write API
+
+The SDK is read-focused. For writes, build transactions directly using the exported ABIs and viem's `walletClient`:
+
+### Deposit (any tranche)
 
 ```ts
-const pending = await sdk.getUserPendingWithdraws("0xUser");
-const claimable = await sdk.getClaimableWithdraws("0xUser");
-```
+import { TRANCHE_VAULT_ABI, ERC20_ABI } from "primevaults-sdk";
 
-### 3. Estimate Helpers
+// 1. Approve
+await walletClient.writeContract({
+  address: USDAI_ADDRESS,
+  abi: ERC20_ABI,
+  functionName: "approve",
+  args: [seniorVaultAddress, amount],
+});
 
-#### Estimate WETH for Junior Deposit
-
-```ts
-const est = await sdk.estimateWETHAmount(sdk.parseAmount("1000"));
-console.log("WETH needed:", sdk.formatAmount(est.wethAmount));
-console.log("WETH price:", sdk.formatAmount(est.wethPrice));
-```
-
-#### Estimate Junior Withdraw
-
-Junior withdrawals return both base assets (with fee) and proportional WETH:
-
-```ts
-const est = await sdk.estimateJuniorWithdraw(sdk.parseAmount("100"));
-console.log("Base (gross):", sdk.formatAmount(est.baseAmount));
-console.log("Fee:", sdk.formatAmount(est.feeAmount), `(${sdk.formatBps(est.feeBps)})`);
-console.log("Base (net):", sdk.formatAmount(est.netBaseAmount));
-console.log("WETH received:", sdk.formatAmount(est.wethAmount));
-console.log("WETH value:", sdk.formatAmount(est.wethValueUSD));
-// mechanism: 0=instant, 1=assets_lock, 2=shares_lock
-console.log("Cooldown:", Number(est.cooldownDuration) / 3600, "hours");
-```
-
-### 4. Write Operations (requires WalletClient)
-
-All write operations return `WriteResult` with gas estimation:
-
-```ts
-interface WriteResult {
-  hash: string;           // Transaction hash
-  gasEstimate: bigint;    // Gas units estimated
-  gasPrice: bigint;       // Gas price (wei)
-  estimatedFeeWei: bigint; // gasEstimate * gasPrice
-}
-```
-
-#### Create a WalletClient
-
-```ts
-import { createWalletClient, custom, formatEther } from "viem";
-import { arbitrum } from "viem/chains";
-
-const walletClient = createWalletClient({
-  chain: arbitrum,
-  transport: custom(window.ethereum),
+// 2. Deposit
+await walletClient.writeContract({
+  address: seniorVaultAddress,
+  abi: TRANCHE_VAULT_ABI,
+  functionName: "deposit",
+  args: [amount, receiverAddress],
 });
 ```
 
-#### Approve + Deposit into Senior/Mezz
+### Request Withdraw
 
 ```ts
-const amount = sdk.parseAmount("1000");
+const hash = await walletClient.writeContract({
+  address: vaultAddress,
+  abi: TRANCHE_VAULT_ABI,
+  functionName: "requestWithdraw",
+  args: [shares, receiverAddress],
+});
 
-// Step 1: Approve
-const approve = await sdk.approveVaultDeposit(walletClient, "SENIOR", tokenAddress, amount);
-console.log("Approve fee:", formatEther(approve.estimatedFeeWei), "ETH");
-
-// Step 2: Deposit
-const deposit = await sdk.deposit(walletClient, "SENIOR", amount, receiverAddress);
-console.log("Deposit fee:", formatEther(deposit.estimatedFeeWei), "ETH");
+// Parse WithdrawRequested event for mechanism + cooldownId
 ```
 
-#### Junior Deposit (base + WETH)
+### Claim Cooldown
 
 ```ts
-const baseAmount = sdk.parseAmount("800");
-const wethAmount = sdk.parseAmount("0.1");
-const result = await sdk.depositJunior(walletClient, baseAmount, wethAmount, receiverAddress);
-console.log("TX:", result.hash, "| Fee:", formatEther(result.estimatedFeeWei), "ETH");
+// ASSETS_LOCK — claim sUSDai after cooldown
+await walletClient.writeContract({
+  address: vaultAddress,
+  abi: TRANCHE_VAULT_ABI,
+  functionName: "claimWithdraw",
+  args: [cooldownId, cooldownHandlerAddress],
+});
+
+// SHARES_LOCK — claim shares (yield accrued during lock)
+await walletClient.writeContract({
+  address: vaultAddress,
+  abi: TRANCHE_VAULT_ABI,
+  functionName: "claimSharesWithdraw",
+  args: [cooldownId],
+});
 ```
 
-#### Request Withdrawal
+## Governance
 
-```ts
-const shares = sdk.parseAmount("500");
-const result = await sdk.requestWithdraw(walletClient, "MEZZ", shares, outputToken, receiver);
-console.log("TX:", result.hash);
+PrimeVaults V2 uses **progressive decentralization** (see `docs/PV_V2_GOVERNANCE.md`):
+
+- **Stage 1**: Deployer EOA (initial setup)
+- **Stage 2**: Operations Multisig (Safe 3/5)
+- **Stage 3**: **PrimeLock** (24-hour timelock) + **Guardian** Safe for emergency
+- **Stage 4** (future): DAO with PRIME ERC20Votes token
+
+The Guardian Safe has narrow emergency powers (pause/unpause, cancel proposals) bypassing the timelock. All other parameter changes go through the 24-hour PrimeLock delay.
+
+## Runnable Scripts
+
+All scripts are in `lib/scripts/`. Run with `npx tsx`:
+
+```bash
+# Read-only dashboard
+ARB_RPC_URL=<url> npx tsx lib/scripts/dashboard.ts
+ARB_RPC_URL=<url> npx tsx lib/scripts/dashboard.ts --user 0xUser...
+
+# Deposit (any tranche)
+ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche SENIOR --amount 100
+ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche JUNIOR --amount 25 --dry-run
+
+# Withdraw
+npx tsx lib/scripts/withdraw-flow.ts --tranche MEZZ --shares 10
+npx tsx lib/scripts/withdraw-flow.ts --claim --cooldown-id 1 --tranche SENIOR
+npx tsx lib/scripts/withdraw-flow.ts --claim-shares --cooldown-id 2 --tranche JUNIOR
+
+# Governance / admin
+npx tsx lib/scripts/claim-reserve.ts --recipient 0xTreasury...
+npx tsx lib/scripts/unpause.ts
+npx tsx lib/scripts/set-cooldown.ts --tranche MEZZ --assets-lock 3d --shares-lock 7d
 ```
 
-#### Claim After Cooldown
-
-```ts
-// For ERC20/Unstake cooldown
-const claim = await sdk.claimWithdraw(walletClient, "MEZZ", cooldownId, cooldownHandler);
-
-// For Shares cooldown
-const claim = await sdk.claimSharesWithdraw(walletClient, "MEZZ", cooldownId, outputToken);
-```
-
-### 5. Per-Vault ERC4626 Read Functions
-
-These read directly from each vault contract (no PrimeLens required):
-
-| Function                           | Description                              |
-| ---------------------------------- | ---------------------------------------- |
-| `getShareBalance(tranche, user)`   | User's share balance in the vault        |
-| `convertToAssets(tranche, shares)` | Convert shares to underlying assets      |
-| `convertToShares(tranche, assets)` | Convert assets to shares                 |
-| `previewDeposit(tranche, assets)`  | Estimate shares received on deposit      |
-| `previewRedeem(tranche, shares)`   | Estimate assets received on redeem       |
-| `getTotalAssets(tranche)`          | Total assets held by the vault           |
-| `getTotalSupply(tranche)`          | Total share supply                       |
-| `getVaultDecimals(tranche)`        | Vault decimals                           |
-| `getVaultAsset(tranche)`           | Underlying asset address                 |
-
-### 6. Utility Methods
-
-```ts
-sdk.formatAmount(1000000000000000000n);     // "1.0"
-sdk.parseAmount("1.0");                      // 1000000000000000000n
-sdk.formatSharePrice(1050000000000000000n);  // "1.05"
-sdk.formatBps(50n);                          // "0.5%"
-sdk.formatRatio(200000000000000000n);        // "20.00%"
-```
-
-## Types
+## Exported Types
 
 ```ts
 import type {
-  PrimeVaultsConfig,       // SDK initialization config
-  ContractAddresses,       // Contract addresses
-  TrancheId,               // "SENIOR" | "MEZZ" | "JUNIOR"
-  TrancheInfo,             // Tranche info (name, symbol, totalAssets, sharePrice, ...)
-  JuniorPosition,          // Junior WETH position (baseTVL, wethTVL, currentRatio, ...)
-  ProtocolHealth,          // Protocol health (TVL, coverage, paused, ...)
-  PendingWithdraw,         // Pending withdrawal (requestId, amount, unlockTime, ...)
-  WithdrawCondition,       // Withdrawal conditions (mechanism, feeBps, cooldownDuration, ...)
-  RebalanceStatus,         // WETH rebalance status (currentRatio, needsSell/Buy, ...)
-  CDOWithdrawResult,       // CDO withdrawal result (isInstant, cooldownId, feeAmount, ...)
-  UserPortfolio,           // Aggregated user portfolio across all tranches
-  WriteResult,             // Write operation result (hash, gasEstimate, gasPrice, estimatedFeeWei)
-  EstimateJuniorWithdraw,  // Junior withdraw estimate (base, fee, WETH, mechanism, cooldown)
+  PrimeVaultsConfig,
+  ContractAddresses,
+  TrancheId,
+  TrancheInfo,
+  PreviewDeposit,
+  PreviewWithdraw,
+  PendingWithdraw,
+  ProtocolHealth,
+  WithdrawCondition,
+  CDOWithdrawResult,
+  UserPortfolio,
+  WriteResult,
+  WithdrawRequestResult,
+  CooldownType,
 } from "primevaults-sdk";
 ```
 
-## Scripts
+## Exported ABIs
 
-Example scripts for testing on Arbitrum mainnet:
-
-```bash
-# Deposit into Senior/Mezz
-ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche SENIOR --amount 10
-
-# Junior dual-asset deposit (auto-calculates 80/20 split)
-ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-junior-flow.ts --amount 100
-
-# Withdraw (request + claim)
-ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/withdraw-flow.ts --tranche SENIOR --shares 10
-
-# Claim pending cooldown
-ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/withdraw-flow.ts --claim --cooldown-id 1 --handler 0x... --tranche SENIOR
-
-# Dry run (preview only, no tx)
-ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche SENIOR --amount 10 --dry-run
+```ts
+import {
+  PRIME_LENS_ABI,
+  TRANCHE_VAULT_ABI,
+  ACCOUNTING_ABI,
+  ERC20_ABI,
+  APR_PAIR_FEED_ABI,
+} from "primevaults-sdk";
 ```
 
-## Deployed Addresses (Arbitrum)
+Admin ABIs (governance ops):
 
-See `deploy/deployed.json` for the latest addresses.
+```ts
+import {
+  PRIME_CDO_ADMIN_ABI,
+  ACCOUNTING_ADMIN_ABI,
+  RISK_PARAMS_ABI,
+  REDEMPTION_POLICY_ABI,
+  STRATEGY_ADMIN_ABI,
+} from "primevaults-sdk/admin";
+```
+
+## Notes
+
+- **APR vs APY**: SDK getter returns `apy` (renamed from `apr`). Internal AprPairFeed contract still uses APR (data source from Aave is APR).
+- **Withdraw output token**: All withdrawals return **sUSDai** (yield-bearing). To convert to USD.AI, call `sUSDai.requestRedeem()` then `sUSDai.redeem()` after the sUSDai cooldown.
+- **Test files**: See `test/unit/` in the main repo for usage patterns and integration examples.
 
 ## Requirements
 
-- Node.js >= 18
-- `viem` >= 2.0.0 (peer dependency)
-
-## License
-
-MIT
+- Node.js ≥ 18
+- `viem` ≥ 2.0.0

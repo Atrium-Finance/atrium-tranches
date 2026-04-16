@@ -234,12 +234,12 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  getSeniorAPR
+  //  getSeniorAPY
   // ═══════════════════════════════════════════════════════════════════
 
-  describe("getSeniorAPR (E5)", () => {
+  describe("getSeniorAPY (E5)", () => {
     it("should return 0 when APR feed returns 0", async () => {
-      expect(await accounting.getSeniorAPR()).to.equal(0n);
+      expect(await accounting.getSeniorAPY()).to.equal(0n);
     });
 
     it("should return MAX(aprTarget, aprBase × (1 - RP1))", async () => {
@@ -247,7 +247,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       // aprTarget=4%, aprBase=12%
       await mockAprFeed.setAprs(40_000_000_000n, 120_000_000_000n);
 
-      const apr = await accounting.getSeniorAPR();
+      const apr = await accounting.getSeniorAPY();
       // Should be > 4% (aprTarget) since 12% × (1 - RP1) > 4%
       expect(apr).to.be.gt(40_000_000_000n * 1_000_000n); // > 4% in 18dec
       // Should be < 12%
@@ -259,7 +259,7 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
       // aprTarget=10%, aprBase=5% → 5% × (1 - RP1) < 10% → returns 10%
       await mockAprFeed.setAprs(100_000_000_000n, 50_000_000_000n);
 
-      const apr = await accounting.getSeniorAPR();
+      const apr = await accounting.getSeniorAPY();
       // Should be approximately 10% (the floor)
       const tenPct18 = 100_000_000_000n * 1_000_000n; // 10% in 18dec
       expect(apr).to.equal(tenPct18);
@@ -267,19 +267,19 @@ describe("Accounting — updateTVL (gain splitting + loss waterfall)", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  getMezzAPR
+  //  getMezzAPY
   // ═══════════════════════════════════════════════════════════════════
 
-  describe("getMezzAPR (E6)", () => {
+  describe("getMezzAPY (E6)", () => {
     it("should return 0 when APR feed returns 0", async () => {
-      expect(await accounting.getMezzAPR()).to.equal(0n);
+      expect(await accounting.getMezzAPY()).to.equal(0n);
     });
 
     it("should return aprBase × (1 + RP1 × subLev) × (1 - RP2)", async () => {
       await seedAll(7_000_000n * E18, 2_000_000n * E18, 1_250_000n * E18);
       await mockAprFeed.setAprs(40_000_000_000n, 120_000_000_000n);
 
-      const apr = await accounting.getMezzAPR();
+      const apr = await accounting.getMezzAPY();
       // Mezz APR should be > aprBase (12%) due to RP1 bonus
       expect(apr).to.be.gt(120_000_000_000n * 1_000_000n); // > 12% in 18dec
     });

@@ -25,10 +25,10 @@ export interface IAccountingInterface extends Interface {
     nameOrSignature:
       | "claimReserve"
       | "getAllTVLs"
-      | "getJuniorAPR"
+      | "getJuniorAPY"
       | "getJuniorTVL"
-      | "getMezzAPR"
-      | "getSeniorAPR"
+      | "getMezzAPY"
+      | "getSeniorAPY"
       | "getTrancheTVL"
       | "recordDeposit"
       | "recordFee"
@@ -45,7 +45,7 @@ export interface IAccountingInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "getJuniorAPR",
+    functionFragment: "getJuniorAPY",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -53,11 +53,11 @@ export interface IAccountingInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "getMezzAPR",
+    functionFragment: "getMezzAPY",
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "getSeniorAPR",
+    functionFragment: "getSeniorAPY",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -87,16 +87,16 @@ export interface IAccountingInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "getAllTVLs", data: BytesLike): Result;
   decodeFunctionResult(
-    functionFragment: "getJuniorAPR",
+    functionFragment: "getJuniorAPY",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "getJuniorTVL",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "getMezzAPR", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "getMezzAPY", data: BytesLike): Result;
   decodeFunctionResult(
-    functionFragment: "getSeniorAPR",
+    functionFragment: "getSeniorAPY",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -166,13 +166,13 @@ export interface IAccounting extends BaseContract {
     "view"
   >;
 
-  getJuniorAPR: TypedContractMethod<[], [bigint], "view">;
+  getJuniorAPY: TypedContractMethod<[], [bigint], "view">;
 
   getJuniorTVL: TypedContractMethod<[], [bigint], "view">;
 
-  getMezzAPR: TypedContractMethod<[], [bigint], "view">;
+  getMezzAPY: TypedContractMethod<[], [bigint], "view">;
 
-  getSeniorAPR: TypedContractMethod<[], [bigint], "view">;
+  getSeniorAPY: TypedContractMethod<[], [bigint], "view">;
 
   getTrancheTVL: TypedContractMethod<[id: BigNumberish], [bigint], "view">;
 
@@ -215,16 +215,16 @@ export interface IAccounting extends BaseContract {
     "view"
   >;
   getFunction(
-    nameOrSignature: "getJuniorAPR"
+    nameOrSignature: "getJuniorAPY"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getJuniorTVL"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "getMezzAPR"
+    nameOrSignature: "getMezzAPY"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "getSeniorAPR"
+    nameOrSignature: "getSeniorAPY"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getTrancheTVL"

@@ -66,7 +66,7 @@ describe("PrimeLens — Read-only aggregator", () => {
 
     const CDOFactory = await ethers.getContractFactory("PrimeCDO");
     cdo = await CDOFactory.deploy(
-      await accounting.getAddress(), await strategy.getAddress(),
+      await accounting.getAddress(), await strategy.getAddress(), ethers.ZeroAddress,
       await redemptionPolicy.getAddress(), await erc20Cooldown.getAddress(),
       await sharesCooldown.getAddress(), ethers.ZeroAddress, owner.address,
     );

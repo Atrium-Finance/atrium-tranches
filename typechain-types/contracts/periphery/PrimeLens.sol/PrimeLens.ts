@@ -30,7 +30,7 @@ export declare namespace PrimeLens {
     totalAssets: BigNumberish;
     totalSupply: BigNumberish;
     sharePrice: BigNumberish;
-    apr: BigNumberish;
+    apy: BigNumberish;
   };
 
   export type TrancheInfoStructOutput = [
@@ -41,7 +41,7 @@ export declare namespace PrimeLens {
     totalAssets: bigint,
     totalSupply: bigint,
     sharePrice: bigint,
-    apr: bigint
+    apy: bigint
   ] & {
     trancheId: bigint;
     vault: string;
@@ -50,7 +50,7 @@ export declare namespace PrimeLens {
     totalAssets: bigint;
     totalSupply: bigint;
     sharePrice: bigint;
-    apr: bigint;
+    apy: bigint;
   };
 
   export type PendingWithdrawStruct = {

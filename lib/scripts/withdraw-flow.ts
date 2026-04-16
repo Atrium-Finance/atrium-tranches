@@ -3,9 +3,9 @@
  *
  * Usage:
  *   # Request withdraw (any tranche):
- *   npx tsx lib/scripts/withdraw-flow.ts --tranche JUNIOR --shares 100
+ *   npx tsx lib/scripts/withdraw-flow.ts --tranche SENIOR --shares 100
  *
- *   # Claim ERC20Cooldown (ASSETS_LOCK — sUSDai or WETH):
+ *   # Claim ERC20Cooldown (ASSETS_LOCK — sUSDai):
  *   npx tsx lib/scripts/withdraw-flow.ts --claim --cooldown-id 1 --tranche SENIOR
  *
  *   # Claim SharesCooldown (SHARES_LOCK):
@@ -58,15 +58,12 @@ async function requestWithdraw() {
   const previewAssets = await sdk.previewRedeem(tranche, withdrawShares);
   console.log(`  Preview value: ${formatUnits(previewAssets, 18)} USD`);
 
-  // 3. Preview withdraw (mechanism, fee, cooldown, and Junior WETH)
+  // 3. Preview withdraw (mechanism, fee, cooldown)
   const preview = await sdk.previewWithdraw(tranche, withdrawShares);
   console.log(`\n  Mechanism: ${MECHANISM_NAMES[preview.mechanism] ?? preview.mechanism}`);
   console.log(`  Fee:       ${Number(preview.feeBps) / 100}% (${formatUnits(preview.feeAmount, 18)})`);
   console.log(`  Cooldown:  ${Number(preview.cooldownDuration) / 3600}h`);
   console.log(`  Net base:  ${formatUnits(preview.netBaseAmount, 18)} sUSDai`);
-  if (tranche === TrancheId.JUNIOR && preview.wethAmount > 0n) {
-    console.log(`  WETH:      ${formatUnits(preview.wethAmount, 18)} ($${formatUnits(preview.wethValueUSD, 18)})`);
-  }
 
   // 4. Pending withdraws
   const pending = await sdk.getUserWithdrawRequests(user);
@@ -117,10 +114,6 @@ async function requestWithdraw() {
     console.log(`    Mechanism:  ${MECHANISM_NAMES[Number(wr.appliedCooldownType)] ?? wr.appliedCooldownType}`);
     console.log(`    CooldownId: ${wr.cooldownId}`);
     console.log(`    Fee:        ${formatUnits(wr.feeAmount, 18)}`);
-    if (wr.wethAmount > 0n) {
-      console.log(`    WETH:       ${formatUnits(wr.wethAmount, 18)}`);
-      if (wr.wethCooldownId > 0n) console.log(`    WETH CdId:  ${wr.wethCooldownId}`);
-    }
 
     // Next action hint
     if (wr.isInstant) {

@@ -12,6 +12,7 @@ export const PRIME_LENS_ABI = [
           { name: "totalAssets", type: "uint256" },
           { name: "totalSupply", type: "uint256" },
           { name: "sharePrice", type: "uint256" },
+          { name: "apy", type: "uint256" },
         ],
         name: "senior",
         type: "tuple",
@@ -25,6 +26,7 @@ export const PRIME_LENS_ABI = [
           { name: "totalAssets", type: "uint256" },
           { name: "totalSupply", type: "uint256" },
           { name: "sharePrice", type: "uint256" },
+          { name: "apy", type: "uint256" },
         ],
         name: "mezz",
         type: "tuple",
@@ -38,6 +40,7 @@ export const PRIME_LENS_ABI = [
           { name: "totalAssets", type: "uint256" },
           { name: "totalSupply", type: "uint256" },
           { name: "sharePrice", type: "uint256" },
+          { name: "apy", type: "uint256" },
         ],
         name: "junior",
         type: "tuple",
@@ -59,29 +62,9 @@ export const PRIME_LENS_ABI = [
           { name: "totalAssets", type: "uint256" },
           { name: "totalSupply", type: "uint256" },
           { name: "sharePrice", type: "uint256" },
+          { name: "apy", type: "uint256" },
         ],
         name: "info",
-        type: "tuple",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "getJuniorPosition",
-    outputs: [
-      {
-        components: [
-          { name: "baseTVL", type: "uint256" },
-          { name: "wethTVL", type: "uint256" },
-          { name: "totalTVL", type: "uint256" },
-          { name: "wethAmount", type: "uint256" },
-          { name: "wethPrice", type: "uint256" },
-          { name: "currentRatio", type: "uint256" },
-          { name: "aaveAPR", type: "uint256" },
-        ],
-        name: "pos",
         type: "tuple",
       },
     ],
@@ -177,29 +160,6 @@ export const PRIME_LENS_ABI = [
     stateMutability: "view",
     type: "function",
   },
-  {
-    inputs: [],
-    name: "getWETHRebalanceStatus",
-    outputs: [
-      {
-        components: [
-          { name: "currentRatio", type: "uint256" },
-          { name: "targetRatio", type: "uint256" },
-          { name: "tolerance", type: "uint256" },
-          { name: "wethAmount", type: "uint256" },
-          { name: "wethValueUSD", type: "uint256" },
-          { name: "wethPrice", type: "uint256" },
-          { name: "needsSell", type: "bool" },
-          { name: "needsBuy", type: "bool" },
-          { name: "excessOrDeficitUSD", type: "uint256" },
-        ],
-        name: "status",
-        type: "tuple",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
 ] as const;
 
 export const TRANCHE_VAULT_ABI = [
@@ -225,17 +185,6 @@ export const TRANCHE_VAULT_ABI = [
   },
   {
     inputs: [
-      { name: "baseAmount", type: "uint256" },
-      { name: "wethAmount", type: "uint256" },
-      { name: "receiver", type: "address" },
-    ],
-    name: "depositJunior",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
       { name: "shares", type: "uint256" },
       { name: "receiver", type: "address" },
     ],
@@ -250,8 +199,6 @@ export const TRANCHE_VAULT_ABI = [
           { name: "unlockTime", type: "uint256" },
           { name: "feeAmount", type: "uint256" },
           { name: "appliedCooldownType", type: "uint8" },
-          { name: "wethAmount", type: "uint256" },
-          { name: "wethCooldownId", type: "uint256" },
         ],
         name: "result",
         type: "tuple",
@@ -279,8 +226,6 @@ export const TRANCHE_VAULT_ABI = [
           { name: "unlockTime", type: "uint256" },
           { name: "feeAmount", type: "uint256" },
           { name: "appliedCooldownType", type: "uint8" },
-          { name: "wethAmount", type: "uint256" },
-          { name: "wethCooldownId", type: "uint256" },
         ],
       },
     ],
@@ -462,21 +407,21 @@ export const APR_PAIR_FEED_ABI = [
 export const ACCOUNTING_ABI = [
   {
     inputs: [],
-    name: "getSeniorAPR",
+    name: "getSeniorAPY",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function",
   },
   {
     inputs: [],
-    name: "getMezzAPR",
+    name: "getMezzAPY",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function",
   },
   {
     inputs: [],
-    name: "getJuniorAPR",
+    name: "getJuniorAPY",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function",
@@ -509,23 +454,6 @@ export const ERC20_ABI = [
     name: "approve",
     outputs: [{ name: "", type: "bool" }],
     stateMutability: "nonpayable",
-    type: "function",
-  },
-] as const;
-
-export const PRIME_CDO_ABI = [
-  {
-    inputs: [],
-    name: "s_ratioTarget",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "s_ratioTolerance",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
     type: "function",
   },
 ] as const;
