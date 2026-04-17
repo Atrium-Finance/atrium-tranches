@@ -471,10 +471,11 @@ contract Accounting is IAccounting {
         else revert PrimeVaults__InvalidTrancheId();
     }
 
+    /** @dev Subtract from tranche TVL. Clamp to 0 instead of leaving dust. */
     function _subFromTranche(TrancheId id, uint256 amount) internal {
-        if (id == TrancheId.SENIOR) s_seniorTVL -= amount;
-        else if (id == TrancheId.MEZZ) s_mezzTVL -= amount;
-        else if (id == TrancheId.JUNIOR) s_juniorBaseTVL -= amount;
+        if (id == TrancheId.SENIOR) s_seniorTVL = amount >= s_seniorTVL ? 0 : s_seniorTVL - amount;
+        else if (id == TrancheId.MEZZ) s_mezzTVL = amount >= s_mezzTVL ? 0 : s_mezzTVL - amount;
+        else if (id == TrancheId.JUNIOR) s_juniorBaseTVL = amount >= s_juniorBaseTVL ? 0 : s_juniorBaseTVL - amount;
         else revert PrimeVaults__InvalidTrancheId();
     }
 }

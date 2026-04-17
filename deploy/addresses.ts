@@ -29,8 +29,8 @@ export const DEFAULTS = {
  * Set TEST_MODE=1 in env to apply these instead of production defaults (3d/7d).
  */
 export const TEST_COOLDOWNS = {
-  ASSETS_LOCK: 3 * 60, // 3 minutes
-  SHARES_LOCK: 5 * 60, // 5 minutes
+  ASSETS_LOCK: 30, // 30s
+  SHARES_LOCK: 1 * 60, // 5 minutes
 } as const;
 
 /**

@@ -80,8 +80,11 @@ contract TrancheVault is ERC4626 {
     /**
      * @notice Total assets for this tranche, read from Accounting.
      * @dev See MATH_REFERENCE §A1. Not based on token balance — Accounting is the source of truth.
+     *      Returns 0 when no shares outstanding to prevent ERC4626 share inflation from
+     *      dust TVL residuals (Accounting may have tiny non-zero TVL after all shares burned).
      */
     function totalAssets() public view override returns (uint256) {
+        if (totalSupply() == 0) return 0;
         return IAccounting(i_cdo.accounting()).getTrancheTVL(i_trancheId);
     }
 
@@ -167,7 +170,9 @@ contract TrancheVault is ERC4626 {
         if (shares == 0) revert PrimeVaults__ZeroShares();
 
         address owner = _msgSender();
-        uint256 baseAmount = convertToAssets(shares);
+
+        // Full drain: use exact TVL to prevent dust residual from ERC4626 virtual shares
+        uint256 baseAmount = shares == totalSupply() ? totalAssets() : convertToAssets(shares);
 
         // Transfer shares from owner to vault (for CDO to potentially pull in SharesLock)
         _transfer(owner, address(this), shares);
