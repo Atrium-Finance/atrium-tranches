@@ -163,12 +163,14 @@ async function depositSUSDai(
   const minted: any = sharesAfter - sharesBefore;
   console.log(`  ✓ Shares minted: ${fmt(minted)} (preview was ${fmt(preview.shares)})`);
 
-  // Verify preview matches actual
+  // Verify preview matches actual (allow small drift from sUSDai rate change between blocks)
   const diff = minted > preview.shares ? minted - preview.shares : preview.shares - minted;
-  if (diff > 1n) {
-    console.log(`  ⚠ Preview mismatch: diff=${diff} wei`);
+  const bps = preview.shares > 0n ? (diff * 10_000n) / preview.shares : 0n;
+  if (bps > 1n) {
+    // > 0.01% drift = real mismatch
+    console.log(`  ⚠ Preview mismatch: diff=${diff} wei (${Number(bps) / 100}%)`);
   } else {
-    console.log(`  ✓ Preview matches actual (within 1 wei)`);
+    console.log(`  ✓ Preview matches actual (diff=${diff} wei, <0.01% — sUSDai rate drift)`);
   }
 
   return minted;
