@@ -12,6 +12,7 @@ import type { ContractAddresses } from "../types";
 import "dotenv/config";
 
 export const USDAI = "0x0A1a1A107E45b7Ced86833863f482BC5f4ed82EF";
+export const SUSDAI = "0x0B2b2B2076d95dda7817e785989fE353fe955ef9";
 
 function requireEnv(name: string): string {
   const value = process.env[name];

@@ -97,6 +97,41 @@ export class PrimeVaultsSDK {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  //  READ — Preview Deposit Output Token (e.g. sUSDai)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Preview deposit for the yield-bearing output token (e.g. sUSDai):
+   * how many vault shares for a given output token amount.
+   * Converts output token amount to base-equivalent internally.
+   */
+  async previewDepositOutputToken(trancheId: TrancheId, amount: bigint): Promise<PreviewDeposit> {
+    const vaultAddr = this._getVaultAddress(trancheId);
+    const results = await this.publicClient.multicall({
+      contracts: [
+        {
+          address: vaultAddr as Address,
+          abi: TRANCHE_VAULT_ABI,
+          functionName: "previewDepositOutputToken",
+          args: [amount],
+        },
+        { address: vaultAddr as Address, abi: TRANCHE_VAULT_ABI, functionName: "totalAssets" },
+        { address: vaultAddr as Address, abi: TRANCHE_VAULT_ABI, functionName: "totalSupply" },
+      ],
+    });
+
+    const shares = results[0].status === "success" ? (results[0].result as bigint) : 0n;
+    const totalAssets = results[1].status === "success" ? (results[1].result as bigint) : 0n;
+    const totalSupply = results[2].status === "success" ? (results[2].result as bigint) : 0n;
+    const sharePrice = totalSupply > 0n ? (totalAssets * PRECISION) / totalSupply : PRECISION;
+
+    // Base-equivalent: derive from shares * sharePrice (since preview already accounts for conversion)
+    const totalBaseValue = totalSupply > 0n ? (shares * totalAssets) / totalSupply : shares;
+
+    return { trancheId, shares, sharePrice, totalBaseValue };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   //  READ — Preview Withdraw
   // ═══════════════════════════════════════════════════════════════════
 

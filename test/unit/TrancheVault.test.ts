@@ -17,6 +17,7 @@ describe("TrancheVault — ERC-4626", () => {
   let erc20Cooldown: any;
   let sharesCooldown: any;
   let mockUSDai: any;
+  let mockSUSDai: any;
 
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
@@ -40,6 +41,8 @@ describe("TrancheVault — ERC-4626", () => {
     // --- Tokens ---
     const BaseFactory = await ethers.getContractFactory("MockBaseAsset");
     mockUSDai = await BaseFactory.deploy("USDai", "USDai");
+    const SUSDaiFactory = await ethers.getContractFactory("MockSUSDai");
+    mockSUSDai = await SUSDaiFactory.deploy(await mockUSDai.getAddress(), 105n * 10n ** 16n); // 1.05 rate
 
     // --- Accounting ---
     const RiskFactory = await ethers.getContractFactory("RiskParams");
@@ -67,8 +70,9 @@ describe("TrancheVault — ERC-4626", () => {
     const CDOFactory = await ethers.getContractFactory("PrimeCDO");
     cdo = await CDOFactory.deploy(
       await accounting.getAddress(), await strategy.getAddress(),
+      ethers.ZeroAddress, // aprFeed
       await redemptionPolicy.getAddress(), await erc20Cooldown.getAddress(),
-      await sharesCooldown.getAddress(), await mockUSDai.getAddress(), owner.address,
+      await sharesCooldown.getAddress(), await mockSUSDai.getAddress(), owner.address,
     );
 
     // --- Deploy 3 TrancheVaults ---
@@ -109,6 +113,20 @@ describe("TrancheVault — ERC-4626", () => {
     await mockUSDai.connect(bob).approve(await mezzVault.getAddress(), ethers.MaxUint256);
     await mockUSDai.connect(bob).approve(await juniorVault.getAddress(), ethers.MaxUint256);
 
+    // --- Configure strategy to track sUSDai in totalAssets ---
+    await strategy.setOutputToken(await mockSUSDai.getAddress());
+
+    // --- Fund users with sUSDai ---
+    await mockUSDai.mint(alice.address, 200_000n * E18);
+    await mockUSDai.connect(alice).approve(await mockSUSDai.getAddress(), ethers.MaxUint256);
+    await mockSUSDai.connect(alice).deposit(100_000n * E18, alice.address);
+
+    // --- sUSDai approvals ---
+    const sUSDaiAddr = await mockSUSDai.getAddress();
+    await (mockSUSDai as any).connect(alice).approve(await seniorVault.getAddress(), ethers.MaxUint256);
+    await (mockSUSDai as any).connect(alice).approve(await mezzVault.getAddress(), ethers.MaxUint256);
+    await (mockSUSDai as any).connect(alice).approve(await juniorVault.getAddress(), ethers.MaxUint256);
+
     // --- Seed Junior TVL so Sr/Mz coverage gate passes ---
     await seedTVL(JUNIOR, 500_000n * E18);
   });
@@ -118,20 +136,30 @@ describe("TrancheVault — ERC-4626", () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe("totalAssets", () => {
-    it("should read Senior TVL from Accounting", async () => {
+    it("should return 0 when no shares exist (totalSupply == 0)", async () => {
+      // TVL seeded but no shares minted → totalAssets guards against dust inflation
       expect(await seniorVault.totalAssets()).to.equal(0n);
-      await seedTVL(SENIOR, 10_000n * E18);
-      expect(await seniorVault.totalAssets()).to.equal(10_000n * E18);
     });
 
-    it("should read Mezzanine TVL from Accounting", async () => {
-      await seedTVL(MEZZ, 5_000n * E18);
+    it("should read Senior TVL from Accounting after deposit", async () => {
+      await seniorVault.connect(alice).deposit(10_000n * E18, alice.address);
+      expect(await seniorVault.totalAssets()).to.equal(10_000n * E18);
+      // Seed extra TVL (yield) → totalAssets increases
+      await seedTVL(SENIOR, 1_000n * E18);
+      expect(await seniorVault.totalAssets()).to.equal(11_000n * E18);
+    });
+
+    it("should read Mezzanine TVL from Accounting after deposit", async () => {
+      await mezzVault.connect(alice).deposit(5_000n * E18, alice.address);
       expect(await mezzVault.totalAssets()).to.equal(5_000n * E18);
     });
 
-    it("should read Junior TVL from Accounting", async () => {
-      // Junior already seeded with 500K
-      expect(await juniorVault.totalAssets()).to.equal(500_000n * E18);
+    it("should read Junior TVL from Accounting after deposit", async () => {
+      // Junior has 500K seeded but no shares → totalAssets returns 0
+      expect(await juniorVault.totalAssets()).to.equal(0n);
+      // Deposit to create shares
+      await juniorVault.connect(alice).deposit(10_000n * E18, alice.address);
+      expect(await juniorVault.totalAssets()).to.equal(510_000n * E18);
     });
   });
 
@@ -361,6 +389,63 @@ describe("TrancheVault — ERC-4626", () => {
       await seniorVault.connect(alice).deposit(10_000n * E18, alice.address);
       const assets = await seniorVault.convertToAssets(1_000n * E18);
       expect(assets).to.equal(1_000n * E18);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  depositOutputToken — sUSDai deposit
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("depositOutputToken — sUSDai", () => {
+    it("should mint shares based on base-equivalent value", async () => {
+      const sUSDaiAmount = 10_000n * E18;
+      // rate = 1.05, so 10_000 sUSDai = 10_500 USDai base-equivalent
+      const expectedBaseAmount = sUSDaiAmount * 105n / 100n;
+
+      await seniorVault.connect(alice).depositOutputToken(sUSDaiAmount, alice.address);
+
+      // First deposit → shares = base-equivalent (1:1)
+      const shares = await seniorVault.balanceOf(alice.address);
+      expect(shares).to.equal(expectedBaseAmount);
+      expect(await seniorVault.totalAssets()).to.equal(expectedBaseAmount);
+    });
+
+    it("should preserve share price when mixing base and output token deposits", async () => {
+      // Alice deposits USDai first
+      await seniorVault.connect(alice).deposit(10_000n * E18, alice.address);
+      const priceBefore = (await seniorVault.totalAssets() * E18) / await seniorVault.totalSupply();
+
+      // Alice deposits sUSDai second
+      await seniorVault.connect(alice).depositOutputToken(1_000n * E18, alice.address);
+      const priceAfter = (await seniorVault.totalAssets() * E18) / await seniorVault.totalSupply();
+
+      expect(priceAfter).to.equal(priceBefore);
+    });
+
+    it("should match previewDepositOutputToken", async () => {
+      const sUSDaiAmount = 5_000n * E18;
+      const previewShares = await seniorVault.previewDepositOutputToken(sUSDaiAmount);
+      await seniorVault.connect(alice).depositOutputToken(sUSDaiAmount, alice.address);
+      expect(await seniorVault.balanceOf(alice.address)).to.equal(previewShares);
+    });
+
+    it("should revert with zero amount", async () => {
+      await expect(
+        seniorVault.connect(alice).depositOutputToken(0, alice.address),
+      ).to.be.revertedWithCustomError(seniorVault, "PrimeVaults__ZeroShares");
+    });
+
+    it("should emit Deposit event with base-equivalent amount", async () => {
+      await expect(
+        seniorVault.connect(alice).depositOutputToken(1_000n * E18, alice.address),
+      ).to.emit(seniorVault, "Deposit");
+    });
+
+    it("should work for Junior vault", async () => {
+      const sUSDaiAmount = 5_000n * E18;
+      const expectedBaseAmount = sUSDaiAmount * 105n / 100n;
+      await juniorVault.connect(alice).depositOutputToken(sUSDaiAmount, alice.address);
+      expect(await juniorVault.balanceOf(alice.address)).to.be.gt(0n);
     });
   });
 });

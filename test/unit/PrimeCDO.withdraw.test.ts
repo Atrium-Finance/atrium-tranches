@@ -75,13 +75,13 @@ describe("PrimeCDO — Withdrawals", () => {
 
     const StratFactory = await ethers.getContractFactory("SUSDaiStrategy");
     strategy = await StratFactory.deploy(
-      predictedCDO, await mockUSDai.getAddress(), await mockSUSDai.getAddress(),
-      owner.address,
+      predictedCDO, await mockSUSDai.getAddress(), owner.address,
     );
 
     const CDOFactory = await ethers.getContractFactory("PrimeCDO");
     cdo = await CDOFactory.deploy(
       await accounting.getAddress(), await strategy.getAddress(),
+      ethers.ZeroAddress, // aprFeed
       await redemptionPolicy.getAddress(), await erc20Cooldown.getAddress(),
       await sharesCooldown.getAddress(), await mockSUSDai.getAddress(), owner.address,
     );

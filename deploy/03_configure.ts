@@ -39,35 +39,53 @@ async function main() {
   console.log(`  Test mode: ${testMode ? "ON (3min/5min cooldowns)" : "OFF (defaults 3d/7d)"}\n`);
 
   // ═══════════════════════════════════════════════════════════════════
-  //  1. Set CDO in Accounting (one-time)
+  //  1. Set CDO in Accounting (one-time, skip if already set)
   // ═══════════════════════════════════════════════════════════════════
 
   const accounting = await hre.ethers.getContractAt("Accounting", d.accounting);
-  await (await accounting.setCDO(d.primeCDO)).wait();
-  console.log(`  ✓ Accounting.setCDO(${d.primeCDO})`);
+  const currentCDO = await accounting.s_primeCDO();
+  if (currentCDO === hre.ethers.ZeroAddress) {
+    await (await accounting.setCDO(d.primeCDO)).wait();
+    console.log(`  ✓ Accounting.setCDO(${d.primeCDO})`);
+  } else {
+    console.log(`  ⊘ Accounting.setCDO already set to ${currentCDO}`);
+  }
 
   // ═══════════════════════════════════════════════════════════════════
-  //  2. Register vaults in CDO
+  //  2. Register vaults in CDO (skip if already registered)
   // ═══════════════════════════════════════════════════════════════════
 
   const cdo = await hre.ethers.getContractAt("PrimeCDO", d.primeCDO);
   for (const t of TRANCHES) {
     const vault = t.id === 0 ? d.seniorVault : t.id === 1 ? d.mezzVault : d.juniorVault;
-    await (await cdo.registerTranche(t.id, vault)).wait();
-    console.log(`  ✓ CDO.registerTranche(${t.name}, ${vault})`);
+    const current = await cdo.s_tranches(t.id);
+    if (current === hre.ethers.ZeroAddress) {
+      await (await cdo.registerTranche(t.id, vault)).wait();
+      console.log(`  ✓ CDO.registerTranche(${t.name}, ${vault})`);
+    } else {
+      console.log(`  ⊘ CDO.registerTranche(${t.name}) already set to ${current}`);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  //  3. Authorize CDO in cooldown contracts
+  //  3. Authorize CDO in cooldown contracts (skip if already authorized)
   // ═══════════════════════════════════════════════════════════════════
 
   const erc20Cooldown = await hre.ethers.getContractAt("ERC20Cooldown", d.erc20Cooldown);
-  await (await erc20Cooldown.setAuthorized(d.primeCDO, true)).wait();
-  console.log(`  ✓ ERC20Cooldown.setAuthorized(CDO)`);
+  if (!(await erc20Cooldown.s_authorized(d.primeCDO))) {
+    await (await erc20Cooldown.setAuthorized(d.primeCDO, true)).wait();
+    console.log(`  ✓ ERC20Cooldown.setAuthorized(CDO)`);
+  } else {
+    console.log(`  ⊘ ERC20Cooldown.setAuthorized(CDO) already set`);
+  }
 
   const sharesCooldown = await hre.ethers.getContractAt("SharesCooldown", d.sharesCooldown);
-  await (await sharesCooldown.setAuthorized(d.primeCDO, true)).wait();
-  console.log(`  ✓ SharesCooldown.setAuthorized(CDO)`);
+  if (!(await sharesCooldown.s_authorized(d.primeCDO))) {
+    await (await sharesCooldown.setAuthorized(d.primeCDO, true)).wait();
+    console.log(`  ✓ SharesCooldown.setAuthorized(CDO)`);
+  } else {
+    console.log(`  ⊘ SharesCooldown.setAuthorized(CDO) already set`);
+  }
 
   // ═══════════════════════════════════════════════════════════════════
   //  4. Set coverage gate params
@@ -80,19 +98,26 @@ async function main() {
   console.log(`  ✓ CDO.setJuniorShortfallPausePrice(90%)`);
 
   // ═══════════════════════════════════════════════════════════════════
-  //  5. Grant KEEPER_ROLE on AprPairFeed
+  //  5. Grant KEEPER_ROLE on AprPairFeed (skip if already granted)
   // ═══════════════════════════════════════════════════════════════════
 
   const aprFeed = await hre.ethers.getContractAt("AprPairFeed", d.aprFeed);
   const KEEPER_ROLE = hre.ethers.keccak256(hre.ethers.toUtf8Bytes("KEEPER_ROLE"));
 
-  // PrimeCDO needs KEEPER_ROLE to auto-push APR data on every deposit/withdraw
-  await (await aprFeed.grantRole(KEEPER_ROLE, d.primeCDO)).wait();
-  console.log(`  ✓ AprPairFeed.grantRole(KEEPER_ROLE, PrimeCDO)`);
+  if (!(await aprFeed.hasRole(KEEPER_ROLE, d.primeCDO))) {
+    await (await aprFeed.grantRole(KEEPER_ROLE, d.primeCDO)).wait();
+    console.log(`  ✓ AprPairFeed.grantRole(KEEPER_ROLE, PrimeCDO)`);
+  } else {
+    console.log(`  ⊘ AprPairFeed KEEPER_ROLE for PrimeCDO already granted`);
+  }
 
   if (keeperAddr) {
-    await (await aprFeed.grantRole(KEEPER_ROLE, keeperAddr)).wait();
-    console.log(`  ✓ AprPairFeed.grantRole(KEEPER_ROLE, ${keeperAddr}) — backup keeper`);
+    if (!(await aprFeed.hasRole(KEEPER_ROLE, keeperAddr))) {
+      await (await aprFeed.grantRole(KEEPER_ROLE, keeperAddr)).wait();
+      console.log(`  ✓ AprPairFeed.grantRole(KEEPER_ROLE, ${keeperAddr}) — backup keeper`);
+    } else {
+      console.log(`  ⊘ AprPairFeed KEEPER_ROLE for ${keeperAddr} already granted`);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════

@@ -250,6 +250,23 @@ export const TRANCHE_VAULT_ABI = [
     type: "function",
   },
   {
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "receiver", type: "address" },
+    ],
+    name: "depositOutputToken",
+    outputs: [{ name: "shares", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "amount", type: "uint256" }],
+    name: "previewDepositOutputToken",
+    outputs: [{ name: "shares", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
     inputs: [{ name: "assets", type: "uint256" }],
     name: "previewDeposit",
     outputs: [{ name: "", type: "uint256" }],

@@ -10,6 +10,7 @@ pragma solidity ^0.8.24;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ERC4626 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IPrimeCDO, TrancheId, CooldownType, CDOWithdrawResult } from "../interfaces/IPrimeCDO.sol";
 import { IAccounting } from "../interfaces/IAccounting.sol";
@@ -129,6 +130,52 @@ contract TrancheVault is ERC4626 {
 
         emit Deposit(_msgSender(), receiver, assets, shares);
         return assets;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  DEPOSIT — output token (e.g. sUSDai)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice Deposit the yield-bearing output token (e.g. sUSDai) directly.
+     * @dev Converts output token amount to base-equivalent for share pricing.
+     *      sUSDai is already yield-bearing so strategy just holds it as-is.
+     *      Share price invariant: sharePrice_before == sharePrice_after (see MATH_REFERENCE §A2).
+     * @param amount Amount of output token (sUSDai) to deposit
+     * @param receiver Address to receive vault shares
+     * @return shares Number of vault shares minted
+     */
+    function depositOutputToken(uint256 amount, address receiver) external returns (uint256 shares) {
+        if (amount == 0) revert PrimeVaults__ZeroShares();
+
+        address outputToken = i_cdo.i_outputToken();
+
+        // Convert output token amount to base-equivalent for share calculation
+        uint256 baseAmount = IERC4626(outputToken).convertToAssets(amount);
+        shares = previewDeposit(baseAmount);
+
+        // 1. Pull output token from depositor to vault
+        SafeERC20.safeTransferFrom(IERC20(outputToken), _msgSender(), address(this), amount);
+
+        // 2. Approve CDO and route deposit (CDO handles output token natively)
+        IERC20(outputToken).forceApprove(address(i_cdo), amount);
+        i_cdo.deposit(i_trancheId, outputToken, amount);
+
+        // 3. Mint shares
+        _mint(receiver, shares);
+
+        emit Deposit(_msgSender(), receiver, baseAmount, shares);
+    }
+
+    /**
+     * @notice Preview how many vault shares a given output token deposit would yield.
+     * @param amount Amount of output token (sUSDai) to deposit
+     * @return shares Number of vault shares that would be minted
+     */
+    function previewDepositOutputToken(uint256 amount) external view returns (uint256 shares) {
+        address outputToken = i_cdo.i_outputToken();
+        uint256 baseAmount = IERC4626(outputToken).convertToAssets(amount);
+        shares = previewDeposit(baseAmount);
     }
 
     // ═══════════════════════════════════════════════════════════════════

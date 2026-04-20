@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IStrategy, WithdrawResult, WithdrawType} from "../../interfaces/IStrategy.sol";
 
 /**
@@ -15,6 +16,7 @@ contract MockStrategy is IStrategy {
     address public immutable i_primeCDO;
     address public immutable i_baseAsset;
     bool public s_active;
+    address public s_outputToken;
 
     error PrimeVaults__Unauthorized(address caller);
 
@@ -56,7 +58,16 @@ contract MockStrategy is IStrategy {
     }
 
     function totalAssets() external view override returns (uint256) {
-        return IERC20(i_baseAsset).balanceOf(address(this));
+        uint256 total = IERC20(i_baseAsset).balanceOf(address(this));
+        if (s_outputToken != address(0)) {
+            uint256 outputBal = IERC20(s_outputToken).balanceOf(address(this));
+            if (outputBal > 0) total += IERC4626(s_outputToken).convertToAssets(outputBal);
+        }
+        return total;
+    }
+
+    function setOutputToken(address token) external {
+        s_outputToken = token;
     }
 
     function baseAsset() external view override returns (address) {

@@ -95,6 +95,19 @@ const _abi = [
     type: "function",
   },
   {
+    inputs: [],
+    name: "i_outputToken",
+    outputs: [
+      {
+        internalType: "address",
+        name: "",
+        type: "address",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
     inputs: [
       {
         internalType: "enum TrancheId",

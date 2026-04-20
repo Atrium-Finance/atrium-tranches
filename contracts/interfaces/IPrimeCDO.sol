@@ -109,4 +109,10 @@ interface IPrimeCDO {
      * @return The Strategy contract address
      */
     function strategy() external view returns (address);
+
+    /**
+     * @notice Address of the output token (e.g. sUSDai) for this market
+     * @return The output token address
+     */
+    function i_outputToken() external view returns (address);
 }

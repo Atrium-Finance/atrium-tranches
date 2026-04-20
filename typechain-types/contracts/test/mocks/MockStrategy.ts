@@ -59,6 +59,8 @@ export interface MockStrategyInterface extends Interface {
       | "name"
       | "predictWithdrawType"
       | "s_active"
+      | "s_outputToken"
+      | "setOutputToken"
       | "supportedTokens"
       | "totalAssets"
       | "withdraw"
@@ -101,6 +103,14 @@ export interface MockStrategyInterface extends Interface {
   ): string;
   encodeFunctionData(functionFragment: "s_active", values?: undefined): string;
   encodeFunctionData(
+    functionFragment: "s_outputToken",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setOutputToken",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "supportedTokens",
     values?: undefined
   ): string;
@@ -139,6 +149,14 @@ export interface MockStrategyInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "s_active", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "s_outputToken",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setOutputToken",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "supportedTokens",
     data: BytesLike
@@ -271,6 +289,14 @@ export interface MockStrategy extends BaseContract {
 
   s_active: TypedContractMethod<[], [boolean], "view">;
 
+  s_outputToken: TypedContractMethod<[], [string], "view">;
+
+  setOutputToken: TypedContractMethod<
+    [token: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
   supportedTokens: TypedContractMethod<[], [string[]], "view">;
 
   totalAssets: TypedContractMethod<[], [bigint], "view">;
@@ -322,6 +348,12 @@ export interface MockStrategy extends BaseContract {
   getFunction(
     nameOrSignature: "s_active"
   ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "s_outputToken"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "setOutputToken"
+  ): TypedContractMethod<[token: AddressLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "supportedTokens"
   ): TypedContractMethod<[], [string[]], "view">;

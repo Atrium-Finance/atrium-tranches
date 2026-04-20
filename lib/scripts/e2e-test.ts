@@ -12,7 +12,8 @@
  *   3. Senior deposit (requires coverage)
  *   4. Mezz deposit (requires coverage)
  *   5. Withdraw test for each tranche → discover mechanism, claim after cooldown
- *   6. Final dashboard
+ *   6. sUSDai deposit (output token) into Junior → verify preview matches actual
+ *   7. Final dashboard
  *
  * Usage:
  *   ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/e2e-test.ts
@@ -20,7 +21,7 @@
  */
 
 import { parseUnits, formatUnits, decodeEventLog, type Hash } from "viem";
-import { createSDK, createWallet, waitForTx, parseFlag, USDAI } from "./config";
+import { createSDK, createWallet, waitForTx, parseFlag, USDAI, SUSDAI } from "./config";
 import { TRANCHE_VAULT_ABI, ERC20_ABI } from "../abis";
 import { TrancheId, CooldownType } from "../types";
 
@@ -117,6 +118,62 @@ async function depositTranche(
   return minted;
 }
 
+async function depositSUSDai(
+  sdk: any,
+  walletClient: any,
+  publicClient: any,
+  account: any,
+  vaultAddr: string,
+  trancheId: TrancheId,
+  sUSDaiAmount: bigint,
+) {
+  const label = TRANCHE_LABEL[trancheId];
+  console.log(`\n  ─── DEPOSIT sUSDai ${label}: ${fmt(sUSDaiAmount)} sUSDai ───`);
+
+  // Preview
+  const preview = await sdk.previewDepositOutputToken(trancheId, sUSDaiAmount);
+  console.log(`  Preview: ${fmt(preview.shares)} shares (base-equiv: ${fmt(preview.totalBaseValue)})`);
+
+  // Approve sUSDai to vault
+  const allowance = await sdk.getTokenAllowance(SUSDAI, account.address, vaultAddr);
+  if (allowance < sUSDaiAmount) {
+    console.log(`  Approving sUSDai...`);
+    const aHash = await walletClient.writeContract({
+      address: SUSDAI as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [vaultAddr as `0x${string}`, sUSDaiAmount],
+      chain: walletClient.chain,
+      account,
+    });
+    await waitForTx(publicClient, aHash as Hash, "Approve sUSDai");
+  }
+
+  const sharesBefore = await sdk.getShareBalance(trancheId, account.address);
+  const hash = await walletClient.writeContract({
+    address: vaultAddr as `0x${string}`,
+    abi: TRANCHE_VAULT_ABI,
+    functionName: "depositOutputToken",
+    args: [sUSDaiAmount, account.address],
+    chain: walletClient.chain,
+    account,
+  });
+  await waitForTx(publicClient, hash as Hash, `DepositOutputToken ${label}`);
+  const sharesAfter = await sdk.getShareBalance(trancheId, account.address);
+  const minted: any = sharesAfter - sharesBefore;
+  console.log(`  ✓ Shares minted: ${fmt(minted)} (preview was ${fmt(preview.shares)})`);
+
+  // Verify preview matches actual
+  const diff = minted > preview.shares ? minted - preview.shares : preview.shares - minted;
+  if (diff > 1n) {
+    console.log(`  ⚠ Preview mismatch: diff=${diff} wei`);
+  } else {
+    console.log(`  ✓ Preview matches actual (within 1 wei)`);
+  }
+
+  return minted;
+}
+
 async function withdrawAndClaim(
   sdk: any,
   walletClient: any,
@@ -180,6 +237,48 @@ async function withdrawAndClaim(
   await sleep((cooldownSec + 5) * 1000);
 
   if (mechanism === CooldownType.SHARES_LOCK) {
+    // Pre-flight diagnostics
+    const COOLDOWN_ABI = [
+      { inputs: [{ name: "requestId", type: "uint256" }], name: "isClaimable", outputs: [{ name: "", type: "bool" }], stateMutability: "view", type: "function" },
+      { inputs: [{ name: "requestId", type: "uint256" }], name: "timeRemaining", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" },
+      {
+        inputs: [{ name: "requestId", type: "uint256" }], name: "getRequest",
+        outputs: [{ components: [
+          { name: "beneficiary", type: "address" }, { name: "token", type: "address" },
+          { name: "amount", type: "uint256" }, { name: "requestTime", type: "uint256" },
+          { name: "unlockTime", type: "uint256" }, { name: "status", type: "uint8" },
+        ], name: "", type: "tuple" }],
+        stateMutability: "view", type: "function",
+      },
+    ] as const;
+    const CDO_ABI = [
+      { inputs: [], name: "i_sharesCooldown", outputs: [{ name: "", type: "address" }], stateMutability: "view", type: "function" },
+      { inputs: [], name: "s_shortfallPaused", outputs: [{ name: "", type: "bool" }], stateMutability: "view", type: "function" },
+    ] as const;
+    const STRATEGY_ABI = [
+      { inputs: [], name: "totalAssets", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" },
+    ] as const;
+
+    const cdoAddr = sdk.addresses.primeCDO as `0x${string}`;
+    const scAddr = await publicClient.readContract({ address: cdoAddr, abi: CDO_ABI, functionName: "i_sharesCooldown" }) as string;
+    const isClaimable = await publicClient.readContract({ address: scAddr as `0x${string}`, abi: COOLDOWN_ABI, functionName: "isClaimable", args: [wr.cooldownId] });
+    const timeLeft = await publicClient.readContract({ address: scAddr as `0x${string}`, abi: COOLDOWN_ABI, functionName: "timeRemaining", args: [wr.cooldownId] });
+    const req = await publicClient.readContract({ address: scAddr as `0x${string}`, abi: COOLDOWN_ABI, functionName: "getRequest", args: [wr.cooldownId] }) as any;
+    const paused = await publicClient.readContract({ address: cdoAddr, abi: CDO_ABI, functionName: "s_shortfallPaused" });
+    const stratTVL = await publicClient.readContract({ address: sdk.addresses.strategy as `0x${string}`, abi: STRATEGY_ABI, functionName: "totalAssets" });
+    const health = await sdk.getProtocolHealth();
+
+    console.log(`  Pre-flight diagnostics:`);
+    console.log(`    SharesCooldown: ${scAddr}`);
+    console.log(`    isClaimable:    ${isClaimable}`);
+    console.log(`    timeRemaining:  ${timeLeft}s`);
+    console.log(`    req.status:     ${req.status} (0=PENDING, 1=CLAIMED)`);
+    console.log(`    req.amount:     ${fmt(req.amount)} shares`);
+    console.log(`    req.unlockTime: ${req.unlockTime}`);
+    console.log(`    shortfallPaused: ${paused}`);
+    console.log(`    strategy TVL:   ${fmt(stratTVL as bigint)}`);
+    console.log(`    accounting:     Sr=${fmt(health.seniorTVL)} Mz=${fmt(health.mezzTVL)} Jr=${fmt(health.juniorTVL)}`);
+
     console.log(`  Claiming SHARES_LOCK (${wr.cooldownId})...`);
     const cHash = await walletClient.writeContract({
       address: vaultAddr as `0x${string}`,
@@ -287,7 +386,7 @@ async function main() {
   const user = account.address;
 
   console.log(`\n  ╔═══════════════════════════════════════════════════════╗`);
-  console.log(`  ║  PrimeVaults E2E Mainnet Test (3 mechanisms)           ║`);
+  console.log(`  ║  PrimeVaults E2E Mainnet Test (3 mechanisms + sUSDai)  ║`);
   console.log(`  ╚═══════════════════════════════════════════════════════╝`);
   console.log(`  User:        ${user}`);
   console.log(`  Base unit:   ${baseStr} USD.AI\n`);
@@ -295,9 +394,10 @@ async function main() {
   console.log(`    A) NONE        — deposit Sr=1×, Mz=1×, Jr=1× (cs=300%, cm=200%)`);
   console.log(`    B) ASSETS_LOCK — deposit Sr=7×, Mz=1×, Jr=3× (cs=157%, cm=400%)`);
   console.log(`    C) SHARES_LOCK — deposit Sr=8×, Mz=1×, Jr=1× (cs=125%, cm=200%)`);
+  console.log(`    D) sUSDai      — deposit sUSDai directly into Junior`);
 
-  // Check balance — need ~22× base for all 3 phases (worst case Phase B+C)
-  const required = base * 25n;
+  // Check balance — need ~22× base for phases A-C + 1× for phase D sUSDai
+  const required = base * 26n;
   const balance = await sdk.getTokenBalance(USDAI, user);
   console.log(`  Balance:     ${fmt(balance)} USD.AI`);
   console.log(`  Required:    ~${fmt(required)} USD.AI\n`);
@@ -339,10 +439,81 @@ async function main() {
     CooldownType.SHARES_LOCK,
   );
 
+  // ─── Phase D: sUSDai deposit ─────────────────────────────────────
+  // Deposit sUSDai (output token) directly into Junior → verify shares
+  // Then withdraw to clean state
+  {
+    console.log(`\n\n  ╔═══════════════════════════════════════════════════════╗`);
+    console.log(`  ║  Scenario: D — sUSDai deposit (output token)          ║`);
+    console.log(`  ╚═══════════════════════════════════════════════════════╝`);
+
+    // First get some sUSDai: deposit USD.AI into sUSDai vault
+    const sUSDaiAmount = base;
+    console.log(`\n  Step 1: Acquire sUSDai by depositing ${fmt(sUSDaiAmount)} USD.AI into sUSDai vault`);
+    const sUSDaiBalBefore = await sdk.getTokenBalance(SUSDAI, user);
+
+    // Approve USD.AI to sUSDai vault
+    const usdaiAllowance = await sdk.getTokenAllowance(USDAI, user, SUSDAI);
+    if (usdaiAllowance < sUSDaiAmount) {
+      const aHash = await walletClient.writeContract({
+        address: USDAI as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [SUSDAI as `0x${string}`, sUSDaiAmount],
+        chain: walletClient.chain,
+        account,
+      });
+      await waitForTx(publicClient, aHash as Hash, "Approve USD.AI → sUSDai");
+    }
+
+    // Deposit USD.AI → sUSDai (ERC-4626)
+    const SUSDAI_ABI = [
+      {
+        inputs: [
+          { name: "assets", type: "uint256" },
+          { name: "receiver", type: "address" },
+        ],
+        name: "deposit",
+        outputs: [{ name: "shares", type: "uint256" }],
+        stateMutability: "nonpayable",
+        type: "function",
+      },
+    ] as const;
+    const dHash = await walletClient.writeContract({
+      address: SUSDAI as `0x${string}`,
+      abi: SUSDAI_ABI,
+      functionName: "deposit",
+      args: [sUSDaiAmount, account.address],
+      chain: walletClient.chain,
+      account,
+    });
+    await waitForTx(publicClient, dHash as Hash, "Deposit USD.AI → sUSDai");
+
+    const sUSDaiBal = await sdk.getTokenBalance(SUSDAI, user);
+    const sUSDaiAcquired = sUSDaiBal - sUSDaiBalBefore;
+    console.log(`  ✓ Acquired ${fmt(sUSDaiAcquired)} sUSDai`);
+
+    // Step 2: Deposit sUSDai into Junior vault (no coverage gate)
+    console.log(`\n  Step 2: Deposit sUSDai into Junior vault`);
+    const jrShares = await depositSUSDai(
+      sdk, walletClient, publicClient, account,
+      addresses.juniorVault, TrancheId.JUNIOR, sUSDaiAcquired,
+    );
+
+    await showHealth(sdk);
+
+    // Step 3: Withdraw Junior to clean state
+    console.log(`\n  Step 3: Withdraw Junior to clean state`);
+    await withdrawAndClaim(
+      sdk, walletClient, publicClient, account,
+      addresses.juniorVault, TrancheId.JUNIOR, jrShares,
+    );
+  }
+
   await showHealth(sdk);
   await showTranches(sdk);
 
-  console.log(`\n  ✓ All 3 mechanism scenarios passed.\n`);
+  console.log(`\n  ✓ All 4 scenarios passed (3 mechanisms + sUSDai deposit).\n`);
 }
 
 main().catch((err) => {

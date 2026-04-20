@@ -51,6 +51,7 @@ describe("PrimeCDO — Loss Coverage & Shortfall", () => {
     const CDOFactory = await ethers.getContractFactory("PrimeCDO");
     cdo = await CDOFactory.deploy(
       await accounting.getAddress(), await strategy.getAddress(),
+      ethers.ZeroAddress, // aprFeed
       ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress,
       ethers.ZeroAddress, owner.address,
     );

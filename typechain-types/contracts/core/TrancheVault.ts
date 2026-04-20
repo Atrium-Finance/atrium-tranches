@@ -65,6 +65,7 @@ export interface TrancheVaultInterface extends Interface {
       | "convertToShares"
       | "decimals"
       | "deposit"
+      | "depositOutputToken"
       | "i_cdo"
       | "i_trancheId"
       | "maxDeposit"
@@ -74,6 +75,7 @@ export interface TrancheVaultInterface extends Interface {
       | "mint"
       | "name"
       | "previewDeposit"
+      | "previewDepositOutputToken"
       | "previewMint"
       | "previewRedeem"
       | "previewWithdraw"
@@ -134,6 +136,10 @@ export interface TrancheVaultInterface extends Interface {
     functionFragment: "deposit",
     values: [BigNumberish, AddressLike]
   ): string;
+  encodeFunctionData(
+    functionFragment: "depositOutputToken",
+    values: [BigNumberish, AddressLike]
+  ): string;
   encodeFunctionData(functionFragment: "i_cdo", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "i_trancheId",
@@ -162,6 +168,10 @@ export interface TrancheVaultInterface extends Interface {
   encodeFunctionData(functionFragment: "name", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "previewDeposit",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "previewDepositOutputToken",
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
@@ -232,6 +242,10 @@ export interface TrancheVaultInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "decimals", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "deposit", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "depositOutputToken",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "i_cdo", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "i_trancheId",
@@ -248,6 +262,10 @@ export interface TrancheVaultInterface extends Interface {
   decodeFunctionResult(functionFragment: "name", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "previewDeposit",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "previewDepositOutputToken",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -498,6 +516,12 @@ export interface TrancheVault extends BaseContract {
     "nonpayable"
   >;
 
+  depositOutputToken: TypedContractMethod<
+    [amount: BigNumberish, receiver: AddressLike],
+    [bigint],
+    "nonpayable"
+  >;
+
   i_cdo: TypedContractMethod<[], [string], "view">;
 
   i_trancheId: TypedContractMethod<[], [bigint], "view">;
@@ -519,6 +543,12 @@ export interface TrancheVault extends BaseContract {
   name: TypedContractMethod<[], [string], "view">;
 
   previewDeposit: TypedContractMethod<[assets: BigNumberish], [bigint], "view">;
+
+  previewDepositOutputToken: TypedContractMethod<
+    [amount: BigNumberish],
+    [bigint],
+    "view"
+  >;
 
   previewMint: TypedContractMethod<[shares: BigNumberish], [bigint], "view">;
 
@@ -624,6 +654,13 @@ export interface TrancheVault extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "depositOutputToken"
+  ): TypedContractMethod<
+    [amount: BigNumberish, receiver: AddressLike],
+    [bigint],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "i_cdo"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
@@ -654,6 +691,9 @@ export interface TrancheVault extends BaseContract {
   getFunction(
     nameOrSignature: "previewDeposit"
   ): TypedContractMethod<[assets: BigNumberish], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "previewDepositOutputToken"
+  ): TypedContractMethod<[amount: BigNumberish], [bigint], "view">;
   getFunction(
     nameOrSignature: "previewMint"
   ): TypedContractMethod<[shares: BigNumberish], [bigint], "view">;

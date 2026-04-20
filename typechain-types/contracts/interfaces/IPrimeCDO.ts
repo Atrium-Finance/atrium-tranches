@@ -56,6 +56,7 @@ export interface IPrimeCDOInterface extends Interface {
       | "claimSharesWithdraw"
       | "claimWithdraw"
       | "deposit"
+      | "i_outputToken"
       | "requestWithdraw"
       | "strategy"
   ): FunctionFragment;
@@ -77,6 +78,10 @@ export interface IPrimeCDOInterface extends Interface {
     values: [BigNumberish, AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "i_outputToken",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "requestWithdraw",
     values: [BigNumberish, BigNumberish, AddressLike, BigNumberish]
   ): string;
@@ -92,6 +97,10 @@ export interface IPrimeCDOInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "deposit", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "i_outputToken",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "requestWithdraw",
     data: BytesLike
@@ -162,6 +171,8 @@ export interface IPrimeCDO extends BaseContract {
     "nonpayable"
   >;
 
+  i_outputToken: TypedContractMethod<[], [string], "view">;
+
   requestWithdraw: TypedContractMethod<
     [
       tranche: BigNumberish,
@@ -199,6 +210,9 @@ export interface IPrimeCDO extends BaseContract {
     [bigint],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "i_outputToken"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "requestWithdraw"
   ): TypedContractMethod<
