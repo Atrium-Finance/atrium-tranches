@@ -56,14 +56,15 @@ async function requestWithdraw() {
 
   // 2. Preview
   const previewAssets = await sdk.previewRedeem(tranche, withdrawShares);
-  console.log(`  Preview value: ${formatUnits(previewAssets, 18)} USD`);
+  console.log(`  Preview value: ${formatUnits(previewAssets, 18)} USD.AI (base)`);
 
   // 3. Preview withdraw (mechanism, fee, cooldown)
   const preview = await sdk.previewWithdraw(tranche, withdrawShares);
   console.log(`\n  Mechanism: ${MECHANISM_NAMES[preview.mechanism] ?? preview.mechanism}`);
   console.log(`  Fee:       ${Number(preview.feeBps) / 100}% (${formatUnits(preview.feeAmount, 18)})`);
   console.log(`  Cooldown:  ${Number(preview.cooldownDuration) / 3600}h`);
-  console.log(`  Net base:  ${formatUnits(preview.netBaseAmount, 18)} sUSDai`);
+  console.log(`  Net base:  ${formatUnits(preview.netBaseAmount, 18)} USD.AI`);
+  console.log(`  Net out:   ${formatUnits(preview.outputTokenAmount, 18)} sUSDai`);
 
   // 4. Pending withdraws
   const pending = await sdk.getUserWithdrawRequests(user);

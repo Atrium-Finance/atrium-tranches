@@ -20,10 +20,12 @@ export interface ContractAddresses {
   primeLens: string;
   accounting: string;
   strategy: string;
+  outputToken?: string;
   erc20Cooldown?: string;
   sharesCooldown?: string;
   redemptionPolicy?: string;
   aprFeed?: string;
+  aprProvider?: string;
   riskParams?: string;
   primeLock?: string;
 }
@@ -55,6 +57,8 @@ export interface PreviewWithdraw {
   feeAmount: bigint;
   netBaseAmount: bigint;
   baseAmountOut: bigint;
+  /** Actual sUSDai (output token) amount user receives after conversion */
+  outputTokenAmount: bigint;
 }
 
 export interface ProtocolHealth {

@@ -25,7 +25,6 @@ import type {
 export interface SUSDaiAprPairProviderInterface extends Interface {
   getFunction(
     nameOrSignature:
-      | "BENCHMARK_MAX"
       | "benchmarkTokenCount"
       | "getAprPair"
       | "getAprPairView"
@@ -38,10 +37,6 @@ export interface SUSDaiAprPairProviderInterface extends Interface {
 
   getEvent(nameOrSignatureOrTopic: "SnapshotShifted"): EventFragment;
 
-  encodeFunctionData(
-    functionFragment: "BENCHMARK_MAX",
-    values?: undefined
-  ): string;
   encodeFunctionData(
     functionFragment: "benchmarkTokenCount",
     values?: undefined
@@ -72,10 +67,6 @@ export interface SUSDaiAprPairProviderInterface extends Interface {
     values?: undefined
   ): string;
 
-  decodeFunctionResult(
-    functionFragment: "BENCHMARK_MAX",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(
     functionFragment: "benchmarkTokenCount",
     data: BytesLike
@@ -166,8 +157,6 @@ export interface SUSDaiAprPairProvider extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  BENCHMARK_MAX: TypedContractMethod<[], [bigint], "view">;
-
   benchmarkTokenCount: TypedContractMethod<[], [bigint], "view">;
 
   getAprPair: TypedContractMethod<
@@ -220,9 +209,6 @@ export interface SUSDaiAprPairProvider extends BaseContract {
     key: string | FunctionFragment
   ): T;
 
-  getFunction(
-    nameOrSignature: "BENCHMARK_MAX"
-  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "benchmarkTokenCount"
   ): TypedContractMethod<[], [bigint], "view">;

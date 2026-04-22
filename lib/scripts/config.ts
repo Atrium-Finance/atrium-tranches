@@ -23,7 +23,7 @@ function requireEnv(name: string): string {
 function loadDeployedAddresses(): ContractAddresses {
   try {
     const d = require("../../deploy/deployed.json");
-    return d;
+    return { ...d, outputToken: SUSDAI };
   } catch {
     throw new Error("deploy/deployed.json not found — run deploy scripts first");
   }

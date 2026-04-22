@@ -14,6 +14,16 @@ import type {
 
 const PRECISION = 10n ** 18n;
 
+const ERC4626_CONVERT_ABI = [
+  {
+    inputs: [{ name: "assets", type: "uint256" }],
+    name: "convertToShares",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
 export class PrimeVaultsSDK {
   readonly config: PrimeVaultsConfig;
   readonly publicClient: PublicClient;
@@ -167,6 +177,17 @@ export class PrimeVaultsSDK {
     const feeAmount = (baseAmountOut * feeBps) / 10_000n;
     const netBaseAmount = baseAmountOut - feeAmount;
 
+    // Convert base amount to actual output token (sUSDai) amount
+    let outputTokenAmount = netBaseAmount;
+    if (this.addresses.outputToken && netBaseAmount > 0n) {
+      outputTokenAmount = (await this.publicClient.readContract({
+        address: this.addresses.outputToken as Address,
+        abi: ERC4626_CONVERT_ABI,
+        functionName: "convertToShares",
+        args: [netBaseAmount],
+      })) as bigint;
+    }
+
     return {
       trancheId,
       mechanism,
@@ -174,6 +195,7 @@ export class PrimeVaultsSDK {
       feeBps,
       feeAmount,
       netBaseAmount,
+      outputTokenAmount,
       baseAmountOut,
     };
   }
