@@ -65,7 +65,8 @@ contract SUSDaiAprPairProvider is IStrategyAprPairProvider {
     uint256 private constant YEAR = 365 days;
     int256 private constant APR_MIN = -500_000_000_000;  // -50% in 12dec
     int256 private constant APR_MAX = 2_000_000_000_000; // +200% in 12dec
-    int64 public constant BENCHMARK_MAX = 400_000_000_000; // 40% in 12dec
+    uint256 private constant BENCHMARK_MIN = 0;              // 0% in 12dec
+    uint256 private constant BENCHMARK_MAX = 400_000_000_000; // 40% in 12dec
 
     // ═══════════════════════════════════════════════════════════════════
     //  IMMUTABLES
@@ -155,32 +156,40 @@ contract SUSDaiAprPairProvider is IStrategyAprPairProvider {
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * @dev Compute Aave supply-weighted average APR from benchmarkTokens[].
-     *      aTokenAddress read from getReserveData (fix #2). Capped at BENCHMARK_MAX (fix #3).
+     * @dev Compute Aave aToken-supply-weighted average APR from benchmarkTokens[].
+     *      Weight = aToken totalSupply (TVL deposited in each Aave market).
+     *      aTokenAddress read from getReserveData (not hardcoded).
+     *      Result bounded to [BENCHMARK_MIN, BENCHMARK_MAX].
      */
     function _computeBenchmarkApr() internal view returns (int64) {
         uint256 weightedSum;
-        uint256 totalSupply;
+        uint256 totalWeight;
 
         for (uint256 i = 0; i < s_benchmarkTokens.length; i++) {
-            address token = s_benchmarkTokens[i];
-            IAavePool.ReserveData memory data = i_aavePool.getReserveData(token);
-
-            uint256 rate = uint256(data.currentLiquidityRate) / RAY_TO_12DEC;
-            uint256 supply = IERC20(data.aTokenAddress).totalSupply();
-
-            weightedSum += supply * rate;
-            totalSupply += supply;
+            (uint256 rate, uint256 supply) = _getAaveAssetData(i);
+            weightedSum += rate * supply;
+            totalWeight += supply;
         }
 
-        if (totalSupply == 0) return 0;
+        if (totalWeight == 0) return 0;
 
-        int64 apr = int64(int256(weightedSum / totalSupply));
+        uint256 aprAvg = weightedSum / totalWeight;
+        require(aprAvg >= BENCHMARK_MIN && aprAvg <= BENCHMARK_MAX, "PrimeVaults__InvalidBenchmarkApr");
 
-        // Cap at BENCHMARK_MAX (fix #3)
-        if (apr > BENCHMARK_MAX) apr = BENCHMARK_MAX;
+        return int64(int256(aprAvg));
+    }
 
-        return apr;
+    /**
+     * @dev Read Aave reserve data for benchmark token at index i.
+     * @return rate currentLiquidityRate converted to 12 decimals
+     * @return supply aToken totalSupply (Aave TVL for this asset)
+     */
+    function _getAaveAssetData(uint256 i) internal view returns (uint256 rate, uint256 supply) {
+        address token = s_benchmarkTokens[i];
+        IAavePool.ReserveData memory data = i_aavePool.getReserveData(token);
+
+        rate = uint256(data.currentLiquidityRate) / RAY_TO_12DEC;
+        supply = IERC20(data.aTokenAddress).totalSupply();
     }
 
     // ═══════════════════════════════════════════════════════════════════

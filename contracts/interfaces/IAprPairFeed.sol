@@ -26,7 +26,7 @@ interface IStrategyAprPairProvider {
 
 /**
  * @title IAprPairFeed
- * @notice Strata-compatible APR feed. PULL only — no PUSH, trustless.
+ * @notice Supports PULL (from provider) and PUSH (from keeper).
  * @dev Caches APR pair from provider. 20-round circular buffer.
  *      Accounting reads latestRoundData() to get current APR pair.
  */
@@ -39,6 +39,10 @@ interface IAprPairFeed {
     }
 
     function latestRoundData() external view returns (TRound memory);
+
     function getRoundData(uint64 roundId) external view returns (TRound memory);
+
     function updateRoundData() external;
+
+    function pushRoundData(int64 aprTarget, int64 aprBase, uint64 timestamp) external;
 }

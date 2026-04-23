@@ -123,6 +123,22 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    //  UPDATE — PUSH (from off-chain keeper)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice Push APR data directly from an off-chain keeper.
+     * @dev Bypasses on-chain provider — useful when keeper computes APR off-chain.
+     *      Subject to same validation (_storeRound checks staleness, ordering, bounds).
+     * @param aprTarget Benchmark APR (12 decimals, 1% = 1e10)
+     * @param aprBase Strategy APR (12 decimals, 1% = 1e10)
+     * @param timestamp Unix timestamp of the observation
+     */
+    function pushRoundData(int64 aprTarget, int64 aprBase, uint64 timestamp) external onlyRole(KEEPER_ROLE) {
+        _storeRound(aprTarget, aprBase, timestamp);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     //  INTERNAL
     // ═══════════════════════════════════════════════════════════════════
 
