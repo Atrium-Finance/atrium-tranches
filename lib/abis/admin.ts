@@ -144,6 +144,13 @@ export const ACCOUNTING_ADMIN_ABI = [
   },
   {
     inputs: [],
+    name: "s_seniorPrincipal",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
     name: "s_mezzTVL",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
@@ -190,6 +197,96 @@ export const ACCOUNTING_ADMIN_ABI = [
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function",
+  },
+  {
+    inputs: [],
+    name: "getSeniorPrincipal",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+export const APR_PAIR_FEED_ADMIN_ABI = [
+  {
+    inputs: [],
+    name: "latestRoundData",
+    outputs: [
+      {
+        components: [
+          { name: "aprTargetSenior", type: "int64" },
+          { name: "aprTargetMezz", type: "int64" },
+          { name: "aprBase", type: "int64" },
+          { name: "updatedAt", type: "uint64" },
+          { name: "answeredInRound", type: "uint64" },
+        ],
+        name: "",
+        type: "tuple",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "updateRoundData",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "tranche", type: "uint8" },
+      { name: "value", type: "int64" },
+      { name: "timestamp", type: "uint64" },
+    ],
+    name: "pushAprTarget",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "value", type: "int64" },
+      { name: "timestamp", type: "uint64" },
+    ],
+    name: "pushAprBase",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: false, name: "roundId", type: "uint64" },
+      { indexed: false, name: "aprTargetSenior", type: "int64" },
+      { indexed: false, name: "aprTargetMezz", type: "int64" },
+      { indexed: false, name: "aprBase", type: "int64" },
+      { indexed: false, name: "updatedAt", type: "uint64" },
+    ],
+    name: "RoundUpdated",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "tranche", type: "uint8" },
+      { indexed: false, name: "roundId", type: "uint64" },
+      { indexed: false, name: "value", type: "int64" },
+      { indexed: false, name: "updatedAt", type: "uint64" },
+    ],
+    name: "AprTargetPushed",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: false, name: "roundId", type: "uint64" },
+      { indexed: false, name: "value", type: "int64" },
+      { indexed: false, name: "updatedAt", type: "uint64" },
+    ],
+    name: "AprBasePushed",
+    type: "event",
   },
 ] as const;
 

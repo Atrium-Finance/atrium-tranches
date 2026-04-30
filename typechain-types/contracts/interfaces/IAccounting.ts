@@ -29,6 +29,7 @@ export interface IAccountingInterface extends Interface {
       | "getJuniorTVL"
       | "getMezzAPY"
       | "getSeniorAPY"
+      | "getSeniorPrincipal"
       | "getTrancheTVL"
       | "recordDeposit"
       | "recordFee"
@@ -58,6 +59,10 @@ export interface IAccountingInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "getSeniorAPY",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getSeniorPrincipal",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -97,6 +102,10 @@ export interface IAccountingInterface extends Interface {
   decodeFunctionResult(functionFragment: "getMezzAPY", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getSeniorAPY",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getSeniorPrincipal",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -174,6 +183,8 @@ export interface IAccounting extends BaseContract {
 
   getSeniorAPY: TypedContractMethod<[], [bigint], "view">;
 
+  getSeniorPrincipal: TypedContractMethod<[], [bigint], "view">;
+
   getTrancheTVL: TypedContractMethod<[id: BigNumberish], [bigint], "view">;
 
   recordDeposit: TypedContractMethod<
@@ -225,6 +236,9 @@ export interface IAccounting extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getSeniorAPY"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "getSeniorPrincipal"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getTrancheTVL"

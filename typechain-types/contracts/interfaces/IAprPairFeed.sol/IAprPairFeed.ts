@@ -22,19 +22,22 @@ import type {
 
 export declare namespace IAprPairFeed {
   export type TRoundStruct = {
-    aprTarget: BigNumberish;
+    aprTargetSenior: BigNumberish;
+    aprTargetMezz: BigNumberish;
     aprBase: BigNumberish;
     updatedAt: BigNumberish;
     answeredInRound: BigNumberish;
   };
 
   export type TRoundStructOutput = [
-    aprTarget: bigint,
+    aprTargetSenior: bigint,
+    aprTargetMezz: bigint,
     aprBase: bigint,
     updatedAt: bigint,
     answeredInRound: bigint
   ] & {
-    aprTarget: bigint;
+    aprTargetSenior: bigint;
+    aprTargetMezz: bigint;
     aprBase: bigint;
     updatedAt: bigint;
     answeredInRound: bigint;
@@ -43,7 +46,12 @@ export declare namespace IAprPairFeed {
 
 export interface IAprPairFeedInterface extends Interface {
   getFunction(
-    nameOrSignature: "getRoundData" | "latestRoundData" | "updateRoundData"
+    nameOrSignature:
+      | "getRoundData"
+      | "latestRoundData"
+      | "pushAprBase"
+      | "pushAprTarget"
+      | "updateRoundData"
   ): FunctionFragment;
 
   encodeFunctionData(
@@ -53,6 +61,14 @@ export interface IAprPairFeedInterface extends Interface {
   encodeFunctionData(
     functionFragment: "latestRoundData",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "pushAprBase",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "pushAprTarget",
+    values: [BigNumberish, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "updateRoundData",
@@ -65,6 +81,14 @@ export interface IAprPairFeedInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "latestRoundData",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "pushAprBase",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "pushAprTarget",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -128,6 +152,18 @@ export interface IAprPairFeed extends BaseContract {
     "view"
   >;
 
+  pushAprBase: TypedContractMethod<
+    [value: BigNumberish, timestamp: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  pushAprTarget: TypedContractMethod<
+    [tranche: BigNumberish, value: BigNumberish, timestamp: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   updateRoundData: TypedContractMethod<[], [void], "nonpayable">;
 
   getFunction<T extends ContractMethod = ContractMethod>(
@@ -144,6 +180,20 @@ export interface IAprPairFeed extends BaseContract {
   getFunction(
     nameOrSignature: "latestRoundData"
   ): TypedContractMethod<[], [IAprPairFeed.TRoundStructOutput], "view">;
+  getFunction(
+    nameOrSignature: "pushAprBase"
+  ): TypedContractMethod<
+    [value: BigNumberish, timestamp: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "pushAprTarget"
+  ): TypedContractMethod<
+    [tranche: BigNumberish, value: BigNumberish, timestamp: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "updateRoundData"
   ): TypedContractMethod<[], [void], "nonpayable">;

@@ -217,6 +217,8 @@ export class PrimeVaultsSDK {
     const h = result as any;
     return {
       seniorTVL: h.seniorTVL,
+      seniorPrincipal: h.seniorPrincipal,
+      seniorYield: h.seniorYield,
       mezzTVL: h.mezzTVL,
       juniorTVL: h.juniorTVL,
       totalTVL: h.totalTVL,

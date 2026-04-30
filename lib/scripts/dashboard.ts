@@ -198,11 +198,15 @@ async function main() {
   const updatedAt = new Date(Number(round.updatedAt) * 1000);
   const staleMinutes = Math.floor((Date.now() - updatedAt.getTime()) / 60_000);
   console.log(
-    `  [cached]  aprTarget=${fmtApr12(BigInt(round.aprTarget))}  aprBase=${fmtApr12(BigInt(round.aprBase))}  (round #${round.answeredInRound}, ${staleMinutes}m ago)`,
+    `  [cached]  aprTargetSr=${fmtApr12(BigInt(round.aprTargetSenior))}  aprTargetMz=${fmtApr12(BigInt(round.aprTargetMezz))}  aprBase=${fmtApr12(BigInt(round.aprBase))}  (round #${round.answeredInRound}, ${staleMinutes}m ago)`,
   );
   console.log(`  [live]    aprTarget=${fmtApr12(BigInt(liveApr[0]))}  aprBase=${fmtApr12(BigInt(liveApr[1]))}`);
-  if (BigInt(round.aprTarget) !== BigInt(liveApr[0]) || BigInt(round.aprBase) !== BigInt(liveApr[1])) {
-    console.log(`  ⚠ cache stale — live rates differ from cached round`);
+  if (
+    BigInt(round.aprTargetSenior) !== BigInt(liveApr[0]) ||
+    BigInt(round.aprTargetMezz) !== BigInt(liveApr[0]) ||
+    BigInt(round.aprBase) !== BigInt(liveApr[1])
+  ) {
+    console.log(`  ⚠ cache stale or per-tranche overrides active`);
   }
   console.log(`  benchmarkTokens = [${benchmarkTokens.join(", ")}]`);
 

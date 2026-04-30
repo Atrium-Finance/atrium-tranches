@@ -63,6 +63,10 @@ export interface PreviewWithdraw {
 
 export interface ProtocolHealth {
   seniorTVL: bigint;
+  /** Net Senior deposits (no accrued yield). Loss waterfall touches this only as last resort. */
+  seniorPrincipal: bigint;
+  /** seniorTVL - seniorPrincipal — yield-tier absorbed before principal in the loss waterfall. */
+  seniorYield: bigint;
   mezzTVL: bigint;
   juniorTVL: bigint;
   totalTVL: bigint;

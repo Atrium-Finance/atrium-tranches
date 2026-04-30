@@ -89,6 +89,17 @@ interface IAccounting {
     function getAllTVLs() external view returns (uint256 sr, uint256 mz, uint256 jr);
 
     /**
+     * @notice Get the Senior locked-in USDai value (sum of deposits at deposit-time
+     *         sUSDai/USDai exchange rate; excludes accrued yield).
+     * @dev Equivalent to (sUSDai shares Senior contributed) × (deposit-time rate). When
+     *      sUSDai depreciates, the loss waterfall absorbs from Junior → Mezz → Senior
+     *      yield-tier (TVL - principal) → Senior principal-tier (this), preserving this
+     *      locked-in value as long as the lower tranches and Senior's accrued yield can cover.
+     * @return Senior locked-in USDai value (18 decimals)
+     */
+    function getSeniorPrincipal() external view returns (uint256);
+
+    /**
      * @notice Get the current computed Senior APY
      * @dev Computed from risk premium curves and APR feed.
      *      Formula: APY_sr = MAX(aaveBenchmark, baseAPY × (1 - RP1))

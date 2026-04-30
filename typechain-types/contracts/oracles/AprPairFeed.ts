@@ -25,19 +25,22 @@ import type {
 
 export declare namespace IAprPairFeed {
   export type TRoundStruct = {
-    aprTarget: BigNumberish;
+    aprTargetSenior: BigNumberish;
+    aprTargetMezz: BigNumberish;
     aprBase: BigNumberish;
     updatedAt: BigNumberish;
     answeredInRound: BigNumberish;
   };
 
   export type TRoundStructOutput = [
-    aprTarget: bigint,
+    aprTargetSenior: bigint,
+    aprTargetMezz: bigint,
     aprBase: bigint,
     updatedAt: bigint,
     answeredInRound: bigint
   ] & {
-    aprTarget: bigint;
+    aprTargetSenior: bigint;
+    aprTargetMezz: bigint;
     aprBase: bigint;
     updatedAt: bigint;
     answeredInRound: bigint;
@@ -56,6 +59,8 @@ export interface AprPairFeedInterface extends Interface {
       | "grantRole"
       | "hasRole"
       | "latestRoundData"
+      | "pushAprBase"
+      | "pushAprTarget"
       | "renounceRole"
       | "revokeRole"
       | "s_currentRoundId"
@@ -72,6 +77,8 @@ export interface AprPairFeedInterface extends Interface {
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "AprBasePushed"
+      | "AprTargetPushed"
       | "ProviderSet"
       | "RoleAdminChanged"
       | "RoleGranted"
@@ -112,6 +119,14 @@ export interface AprPairFeedInterface extends Interface {
   encodeFunctionData(
     functionFragment: "latestRoundData",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "pushAprBase",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "pushAprTarget",
+    values: [BigNumberish, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "renounceRole",
@@ -187,6 +202,14 @@ export interface AprPairFeedInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "pushAprBase",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "pushAprTarget",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "renounceRole",
     data: BytesLike
   ): Result;
@@ -225,6 +248,49 @@ export interface AprPairFeedInterface extends Interface {
     functionFragment: "updateRoundData",
     data: BytesLike
   ): Result;
+}
+
+export namespace AprBasePushedEvent {
+  export type InputTuple = [
+    roundId: BigNumberish,
+    value: BigNumberish,
+    updatedAt: BigNumberish
+  ];
+  export type OutputTuple = [roundId: bigint, value: bigint, updatedAt: bigint];
+  export interface OutputObject {
+    roundId: bigint;
+    value: bigint;
+    updatedAt: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace AprTargetPushedEvent {
+  export type InputTuple = [
+    tranche: BigNumberish,
+    roundId: BigNumberish,
+    value: BigNumberish,
+    updatedAt: BigNumberish
+  ];
+  export type OutputTuple = [
+    tranche: bigint,
+    roundId: bigint,
+    value: bigint,
+    updatedAt: bigint
+  ];
+  export interface OutputObject {
+    tranche: bigint;
+    roundId: bigint;
+    value: bigint;
+    updatedAt: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace ProviderSetEvent {
@@ -300,19 +366,22 @@ export namespace RoleRevokedEvent {
 export namespace RoundUpdatedEvent {
   export type InputTuple = [
     roundId: BigNumberish,
-    aprTarget: BigNumberish,
+    aprTargetSenior: BigNumberish,
+    aprTargetMezz: BigNumberish,
     aprBase: BigNumberish,
     updatedAt: BigNumberish
   ];
   export type OutputTuple = [
     roundId: bigint,
-    aprTarget: bigint,
+    aprTargetSenior: bigint,
+    aprTargetMezz: bigint,
     aprBase: bigint,
     updatedAt: bigint
   ];
   export interface OutputObject {
     roundId: bigint;
-    aprTarget: bigint;
+    aprTargetSenior: bigint;
+    aprTargetMezz: bigint;
     aprBase: bigint;
     updatedAt: bigint;
   }
@@ -411,6 +480,18 @@ export interface AprPairFeed extends BaseContract {
     "view"
   >;
 
+  pushAprBase: TypedContractMethod<
+    [value: BigNumberish, timestamp: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  pushAprTarget: TypedContractMethod<
+    [tranche: BigNumberish, value: BigNumberish, timestamp: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   renounceRole: TypedContractMethod<
     [role: BytesLike, callerConfirmation: AddressLike],
     [void],
@@ -428,8 +509,9 @@ export interface AprPairFeed extends BaseContract {
   s_latestRound: TypedContractMethod<
     [],
     [
-      [bigint, bigint, bigint, bigint] & {
-        aprTarget: bigint;
+      [bigint, bigint, bigint, bigint, bigint] & {
+        aprTargetSenior: bigint;
+        aprTargetMezz: bigint;
         aprBase: bigint;
         updatedAt: bigint;
         answeredInRound: bigint;
@@ -447,8 +529,9 @@ export interface AprPairFeed extends BaseContract {
   s_rounds: TypedContractMethod<
     [arg0: BigNumberish],
     [
-      [bigint, bigint, bigint, bigint] & {
-        aprTarget: bigint;
+      [bigint, bigint, bigint, bigint, bigint] & {
+        aprTargetSenior: bigint;
+        aprTargetMezz: bigint;
         aprBase: bigint;
         updatedAt: bigint;
         answeredInRound: bigint;
@@ -521,6 +604,20 @@ export interface AprPairFeed extends BaseContract {
     nameOrSignature: "latestRoundData"
   ): TypedContractMethod<[], [IAprPairFeed.TRoundStructOutput], "view">;
   getFunction(
+    nameOrSignature: "pushAprBase"
+  ): TypedContractMethod<
+    [value: BigNumberish, timestamp: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "pushAprTarget"
+  ): TypedContractMethod<
+    [tranche: BigNumberish, value: BigNumberish, timestamp: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "renounceRole"
   ): TypedContractMethod<
     [role: BytesLike, callerConfirmation: AddressLike],
@@ -542,8 +639,9 @@ export interface AprPairFeed extends BaseContract {
   ): TypedContractMethod<
     [],
     [
-      [bigint, bigint, bigint, bigint] & {
-        aprTarget: bigint;
+      [bigint, bigint, bigint, bigint, bigint] & {
+        aprTargetSenior: bigint;
+        aprTargetMezz: bigint;
         aprBase: bigint;
         updatedAt: bigint;
         answeredInRound: bigint;
@@ -565,8 +663,9 @@ export interface AprPairFeed extends BaseContract {
   ): TypedContractMethod<
     [arg0: BigNumberish],
     [
-      [bigint, bigint, bigint, bigint] & {
-        aprTarget: bigint;
+      [bigint, bigint, bigint, bigint, bigint] & {
+        aprTargetSenior: bigint;
+        aprTargetMezz: bigint;
         aprBase: bigint;
         updatedAt: bigint;
         answeredInRound: bigint;
@@ -591,6 +690,20 @@ export interface AprPairFeed extends BaseContract {
     nameOrSignature: "updateRoundData"
   ): TypedContractMethod<[], [void], "nonpayable">;
 
+  getEvent(
+    key: "AprBasePushed"
+  ): TypedContractEvent<
+    AprBasePushedEvent.InputTuple,
+    AprBasePushedEvent.OutputTuple,
+    AprBasePushedEvent.OutputObject
+  >;
+  getEvent(
+    key: "AprTargetPushed"
+  ): TypedContractEvent<
+    AprTargetPushedEvent.InputTuple,
+    AprTargetPushedEvent.OutputTuple,
+    AprTargetPushedEvent.OutputObject
+  >;
   getEvent(
     key: "ProviderSet"
   ): TypedContractEvent<
@@ -635,6 +748,28 @@ export interface AprPairFeed extends BaseContract {
   >;
 
   filters: {
+    "AprBasePushed(uint64,int64,uint64)": TypedContractEvent<
+      AprBasePushedEvent.InputTuple,
+      AprBasePushedEvent.OutputTuple,
+      AprBasePushedEvent.OutputObject
+    >;
+    AprBasePushed: TypedContractEvent<
+      AprBasePushedEvent.InputTuple,
+      AprBasePushedEvent.OutputTuple,
+      AprBasePushedEvent.OutputObject
+    >;
+
+    "AprTargetPushed(uint8,uint64,int64,uint64)": TypedContractEvent<
+      AprTargetPushedEvent.InputTuple,
+      AprTargetPushedEvent.OutputTuple,
+      AprTargetPushedEvent.OutputObject
+    >;
+    AprTargetPushed: TypedContractEvent<
+      AprTargetPushedEvent.InputTuple,
+      AprTargetPushedEvent.OutputTuple,
+      AprTargetPushedEvent.OutputObject
+    >;
+
     "ProviderSet(address)": TypedContractEvent<
       ProviderSetEvent.InputTuple,
       ProviderSetEvent.OutputTuple,
@@ -679,7 +814,7 @@ export interface AprPairFeed extends BaseContract {
       RoleRevokedEvent.OutputObject
     >;
 
-    "RoundUpdated(uint64,int64,int64,uint64)": TypedContractEvent<
+    "RoundUpdated(uint64,int64,int64,int64,uint64)": TypedContractEvent<
       RoundUpdatedEvent.InputTuple,
       RoundUpdatedEvent.OutputTuple,
       RoundUpdatedEvent.OutputObject

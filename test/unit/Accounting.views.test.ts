@@ -122,9 +122,11 @@ describe("Accounting — Part 1 (Views + Record)", () => {
       expect(await accounting.s_juniorBaseTVL()).to.equal(150n * E18);
     });
 
-    it("should revert on underflow (withdraw > TVL)", async () => {
-      await expect(accounting.connect(cdo).recordWithdraw(SENIOR, 1001n * E18))
-        .to.be.reverted; // arithmetic underflow
+    it("should clamp Senior TVL to 0 when withdraw > TVL (no underflow)", async () => {
+      // _subFromTranche clamps to 0 instead of reverting; principal scales pro-rata to 0
+      await accounting.connect(cdo).recordWithdraw(SENIOR, 1001n * E18);
+      expect(await accounting.s_seniorTVL()).to.equal(0n);
+      expect(await accounting.s_seniorPrincipal()).to.equal(0n);
     });
 
     it("should emit WithdrawRecorded event", async () => {

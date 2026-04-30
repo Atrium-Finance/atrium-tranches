@@ -33,6 +33,7 @@ export interface AccountingInterface extends Interface {
       | "getJuniorTVL"
       | "getMezzAPY"
       | "getSeniorAPY"
+      | "getSeniorPrincipal"
       | "getTrancheTVL"
       | "i_aprFeed"
       | "i_riskParams"
@@ -45,6 +46,7 @@ export interface AccountingInterface extends Interface {
       | "s_mzTargetIndex"
       | "s_primeCDO"
       | "s_reserveTVL"
+      | "s_seniorPrincipal"
       | "s_seniorTVL"
       | "s_srtTargetIndex"
       | "setCDO"
@@ -58,6 +60,9 @@ export interface AccountingInterface extends Interface {
       | "FeeRecorded"
       | "GainSplit"
       | "LossApplied"
+      | "SeniorPrincipalAbsorbed"
+      | "SeniorPrincipalIncreased"
+      | "SeniorPrincipalScaled"
       | "WithdrawRecorded"
   ): EventFragment;
 
@@ -84,6 +89,10 @@ export interface AccountingInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "getSeniorAPY",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getSeniorPrincipal",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -129,6 +138,10 @@ export interface AccountingInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "s_seniorPrincipal",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "s_seniorTVL",
     values?: undefined
   ): string;
@@ -159,6 +172,10 @@ export interface AccountingInterface extends Interface {
   decodeFunctionResult(functionFragment: "getMezzAPY", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getSeniorAPY",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getSeniorPrincipal",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -195,6 +212,10 @@ export interface AccountingInterface extends Interface {
   decodeFunctionResult(functionFragment: "s_primeCDO", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "s_reserveTVL",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "s_seniorPrincipal",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -280,19 +301,70 @@ export namespace LossAppliedEvent {
     loss: BigNumberish,
     jrAbsorbed: BigNumberish,
     mzAbsorbed: BigNumberish,
-    srAbsorbed: BigNumberish
+    srYieldAbsorbed: BigNumberish,
+    srPrincipalAbsorbed: BigNumberish
   ];
   export type OutputTuple = [
     loss: bigint,
     jrAbsorbed: bigint,
     mzAbsorbed: bigint,
-    srAbsorbed: bigint
+    srYieldAbsorbed: bigint,
+    srPrincipalAbsorbed: bigint
   ];
   export interface OutputObject {
     loss: bigint;
     jrAbsorbed: bigint;
     mzAbsorbed: bigint;
-    srAbsorbed: bigint;
+    srYieldAbsorbed: bigint;
+    srPrincipalAbsorbed: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace SeniorPrincipalAbsorbedEvent {
+  export type InputTuple = [amount: BigNumberish, newPrincipal: BigNumberish];
+  export type OutputTuple = [amount: bigint, newPrincipal: bigint];
+  export interface OutputObject {
+    amount: bigint;
+    newPrincipal: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace SeniorPrincipalIncreasedEvent {
+  export type InputTuple = [amount: BigNumberish, newPrincipal: BigNumberish];
+  export type OutputTuple = [amount: bigint, newPrincipal: bigint];
+  export interface OutputObject {
+    amount: bigint;
+    newPrincipal: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace SeniorPrincipalScaledEvent {
+  export type InputTuple = [
+    oldTVL: BigNumberish,
+    newTVL: BigNumberish,
+    newPrincipal: BigNumberish
+  ];
+  export type OutputTuple = [
+    oldTVL: bigint,
+    newTVL: bigint,
+    newPrincipal: bigint
+  ];
+  export interface OutputObject {
+    oldTVL: bigint;
+    newTVL: bigint;
+    newPrincipal: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -374,6 +446,8 @@ export interface Accounting extends BaseContract {
 
   getSeniorAPY: TypedContractMethod<[], [bigint], "view">;
 
+  getSeniorPrincipal: TypedContractMethod<[], [bigint], "view">;
+
   getTrancheTVL: TypedContractMethod<[id: BigNumberish], [bigint], "view">;
 
   i_aprFeed: TypedContractMethod<[], [string], "view">;
@@ -409,6 +483,8 @@ export interface Accounting extends BaseContract {
   s_primeCDO: TypedContractMethod<[], [string], "view">;
 
   s_reserveTVL: TypedContractMethod<[], [bigint], "view">;
+
+  s_seniorPrincipal: TypedContractMethod<[], [bigint], "view">;
 
   s_seniorTVL: TypedContractMethod<[], [bigint], "view">;
 
@@ -450,6 +526,9 @@ export interface Accounting extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getSeniorAPY"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "getSeniorPrincipal"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getTrancheTVL"
@@ -498,6 +577,9 @@ export interface Accounting extends BaseContract {
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "s_reserveTVL"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "s_seniorPrincipal"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "s_seniorTVL"
@@ -552,6 +634,27 @@ export interface Accounting extends BaseContract {
     LossAppliedEvent.OutputObject
   >;
   getEvent(
+    key: "SeniorPrincipalAbsorbed"
+  ): TypedContractEvent<
+    SeniorPrincipalAbsorbedEvent.InputTuple,
+    SeniorPrincipalAbsorbedEvent.OutputTuple,
+    SeniorPrincipalAbsorbedEvent.OutputObject
+  >;
+  getEvent(
+    key: "SeniorPrincipalIncreased"
+  ): TypedContractEvent<
+    SeniorPrincipalIncreasedEvent.InputTuple,
+    SeniorPrincipalIncreasedEvent.OutputTuple,
+    SeniorPrincipalIncreasedEvent.OutputObject
+  >;
+  getEvent(
+    key: "SeniorPrincipalScaled"
+  ): TypedContractEvent<
+    SeniorPrincipalScaledEvent.InputTuple,
+    SeniorPrincipalScaledEvent.OutputTuple,
+    SeniorPrincipalScaledEvent.OutputObject
+  >;
+  getEvent(
     key: "WithdrawRecorded"
   ): TypedContractEvent<
     WithdrawRecordedEvent.InputTuple,
@@ -604,7 +707,7 @@ export interface Accounting extends BaseContract {
       GainSplitEvent.OutputObject
     >;
 
-    "LossApplied(uint256,uint256,uint256,uint256)": TypedContractEvent<
+    "LossApplied(uint256,uint256,uint256,uint256,uint256)": TypedContractEvent<
       LossAppliedEvent.InputTuple,
       LossAppliedEvent.OutputTuple,
       LossAppliedEvent.OutputObject
@@ -613,6 +716,39 @@ export interface Accounting extends BaseContract {
       LossAppliedEvent.InputTuple,
       LossAppliedEvent.OutputTuple,
       LossAppliedEvent.OutputObject
+    >;
+
+    "SeniorPrincipalAbsorbed(uint256,uint256)": TypedContractEvent<
+      SeniorPrincipalAbsorbedEvent.InputTuple,
+      SeniorPrincipalAbsorbedEvent.OutputTuple,
+      SeniorPrincipalAbsorbedEvent.OutputObject
+    >;
+    SeniorPrincipalAbsorbed: TypedContractEvent<
+      SeniorPrincipalAbsorbedEvent.InputTuple,
+      SeniorPrincipalAbsorbedEvent.OutputTuple,
+      SeniorPrincipalAbsorbedEvent.OutputObject
+    >;
+
+    "SeniorPrincipalIncreased(uint256,uint256)": TypedContractEvent<
+      SeniorPrincipalIncreasedEvent.InputTuple,
+      SeniorPrincipalIncreasedEvent.OutputTuple,
+      SeniorPrincipalIncreasedEvent.OutputObject
+    >;
+    SeniorPrincipalIncreased: TypedContractEvent<
+      SeniorPrincipalIncreasedEvent.InputTuple,
+      SeniorPrincipalIncreasedEvent.OutputTuple,
+      SeniorPrincipalIncreasedEvent.OutputObject
+    >;
+
+    "SeniorPrincipalScaled(uint256,uint256,uint256)": TypedContractEvent<
+      SeniorPrincipalScaledEvent.InputTuple,
+      SeniorPrincipalScaledEvent.OutputTuple,
+      SeniorPrincipalScaledEvent.OutputObject
+    >;
+    SeniorPrincipalScaled: TypedContractEvent<
+      SeniorPrincipalScaledEvent.InputTuple,
+      SeniorPrincipalScaledEvent.OutputTuple,
+      SeniorPrincipalScaledEvent.OutputObject
     >;
 
     "WithdrawRecorded(uint8,uint256)": TypedContractEvent<

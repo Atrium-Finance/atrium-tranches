@@ -89,6 +89,8 @@ export declare namespace PrimeLens {
 
   export type ProtocolHealthStruct = {
     seniorTVL: BigNumberish;
+    seniorPrincipal: BigNumberish;
+    seniorYield: BigNumberish;
     mezzTVL: BigNumberish;
     juniorTVL: BigNumberish;
     totalTVL: BigNumberish;
@@ -102,6 +104,8 @@ export declare namespace PrimeLens {
 
   export type ProtocolHealthStructOutput = [
     seniorTVL: bigint,
+    seniorPrincipal: bigint,
+    seniorYield: bigint,
     mezzTVL: bigint,
     juniorTVL: bigint,
     totalTVL: bigint,
@@ -113,6 +117,8 @@ export declare namespace PrimeLens {
     strategyTVL: bigint
   ] & {
     seniorTVL: bigint;
+    seniorPrincipal: bigint;
+    seniorYield: bigint;
     mezzTVL: bigint;
     juniorTVL: bigint;
     totalTVL: bigint;

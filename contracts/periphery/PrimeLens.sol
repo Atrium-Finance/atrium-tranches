@@ -87,6 +87,8 @@ contract PrimeLens {
 
     struct ProtocolHealth {
         uint256 seniorTVL;
+        uint256 seniorPrincipal; // tracked sum of net Senior deposits (no accrued yield)
+        uint256 seniorYield; // seniorTVL - seniorPrincipal (loss waterfall absorbs this before principal)
         uint256 mezzTVL;
         uint256 juniorTVL;
         uint256 totalTVL;
@@ -184,6 +186,9 @@ contract PrimeLens {
     function getProtocolHealth() external view returns (ProtocolHealth memory health) {
         (uint256 sr, uint256 mz, uint256 jr) = i_accounting.getAllTVLs();
         health.seniorTVL = sr;
+        uint256 srPrincipal = i_accounting.getSeniorPrincipal();
+        health.seniorPrincipal = srPrincipal;
+        health.seniorYield = sr > srPrincipal ? sr - srPrincipal : 0;
         health.mezzTVL = mz;
         health.juniorTVL = jr;
         health.totalTVL = sr + mz + jr;

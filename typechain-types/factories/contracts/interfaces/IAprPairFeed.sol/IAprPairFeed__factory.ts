@@ -23,7 +23,12 @@ const _abi = [
         components: [
           {
             internalType: "int64",
-            name: "aprTarget",
+            name: "aprTargetSenior",
+            type: "int64",
+          },
+          {
+            internalType: "int64",
+            name: "aprTargetMezz",
             type: "int64",
           },
           {
@@ -58,7 +63,12 @@ const _abi = [
         components: [
           {
             internalType: "int64",
-            name: "aprTarget",
+            name: "aprTargetSenior",
+            type: "int64",
+          },
+          {
+            internalType: "int64",
+            name: "aprTargetMezz",
             type: "int64",
           },
           {
@@ -83,6 +93,47 @@ const _abi = [
       },
     ],
     stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "int64",
+        name: "value",
+        type: "int64",
+      },
+      {
+        internalType: "uint64",
+        name: "timestamp",
+        type: "uint64",
+      },
+    ],
+    name: "pushAprBase",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "enum TrancheId",
+        name: "tranche",
+        type: "uint8",
+      },
+      {
+        internalType: "int64",
+        name: "value",
+        type: "int64",
+      },
+      {
+        internalType: "uint64",
+        name: "timestamp",
+        type: "uint64",
+      },
+    ],
+    name: "pushAprTarget",
+    outputs: [],
+    stateMutability: "nonpayable",
     type: "function",
   },
   {
