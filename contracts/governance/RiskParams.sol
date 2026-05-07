@@ -35,8 +35,6 @@ contract RiskParams is Ownable2Step {
     uint256 public constant MAX_SENIOR_X = 0.30e18; //0.3
     uint256 public constant MAX_SENIOR_XY = 0.80e18; //0.8
     uint256 public constant MAX_JUNIOR_XY = 0.50e18; //0.5
-    uint256 public constant MIN_ALPHA = 0.40e18; //0.4
-    uint256 public constant MAX_ALPHA = 0.80e18; //0.8
     uint256 public constant MAX_RESERVE_BPS = 2_000;
 
     // ═══════════════════════════════════════════════════════════════════
@@ -45,7 +43,6 @@ contract RiskParams is Ownable2Step {
 
     PremiumCurve public s_seniorPremium;
     PremiumCurve public s_juniorPremium;
-    uint256 public s_alpha;
     uint256 public s_reserveBps;
 
     // ═══════════════════════════════════════════════════════════════════
@@ -54,7 +51,6 @@ contract RiskParams is Ownable2Step {
 
     event SeniorPremiumUpdated(uint256 x, uint256 y, uint256 k);
     event JuniorPremiumUpdated(uint256 x, uint256 y, uint256 k);
-    event AlphaUpdated(uint256 alpha);
     event ReserveBpsUpdated(uint256 reserveBps);
 
     // ═══════════════════════════════════════════════════════════════════
@@ -64,7 +60,6 @@ contract RiskParams is Ownable2Step {
     error PrimeVaults__SeniorXTooHigh(uint256 x, uint256 max);
     error PrimeVaults__SeniorXYTooHigh(uint256 xy, uint256 max);
     error PrimeVaults__JuniorXYTooHigh(uint256 xy, uint256 max);
-    error PrimeVaults__AlphaOutOfRange(uint256 alpha, uint256 min, uint256 max);
     error PrimeVaults__ReserveBpsTooHigh(uint256 bps, uint256 max);
 
     // ═══════════════════════════════════════════════════════════════════
@@ -74,7 +69,6 @@ contract RiskParams is Ownable2Step {
     constructor(address owner_) Ownable(owner_) {
         s_seniorPremium = PremiumCurve({x: 0.10e18, y: 0.125e18, k: 0.3e18}); // RP1 = 10% + 12.5% * ratio_sr^0.3
         s_juniorPremium = PremiumCurve({x: 0.05e18, y: 0.10e18, k: 0.5e18}); // RP2 = 5% + 10% * coverage^0.5
-        s_alpha = 0.60e18; // Senior pays 60% of RP2 cost, Junior pays 40%
         s_reserveBps = 500;
     }
 
@@ -112,18 +106,6 @@ contract RiskParams is Ownable2Step {
             );
         s_juniorPremium = curve;
         emit JuniorPremiumUpdated(curve.x, curve.y, curve.k);
-    }
-
-    /**
-     * @notice Update the alpha parameter (Senior's share of RP2 cost)
-     * @dev Constraint: alpha in [0.40e18, 0.80e18]
-     * @param alpha_ New alpha value (18 decimals)
-     */
-    function setAlpha(uint256 alpha_) external onlyOwner {
-        if (alpha_ < MIN_ALPHA || alpha_ > MAX_ALPHA)
-            revert PrimeVaults__AlphaOutOfRange(alpha_, MIN_ALPHA, MAX_ALPHA);
-        s_alpha = alpha_;
-        emit AlphaUpdated(alpha_);
     }
 
     /**

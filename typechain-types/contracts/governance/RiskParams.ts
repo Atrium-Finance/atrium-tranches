@@ -40,21 +40,17 @@ export declare namespace RiskParams {
 export interface RiskParamsInterface extends Interface {
   getFunction(
     nameOrSignature:
-      | "MAX_ALPHA"
       | "MAX_JUNIOR_XY"
       | "MAX_RESERVE_BPS"
       | "MAX_SENIOR_X"
       | "MAX_SENIOR_XY"
-      | "MIN_ALPHA"
       | "acceptOwnership"
       | "owner"
       | "pendingOwner"
       | "renounceOwnership"
-      | "s_alpha"
       | "s_juniorPremium"
       | "s_reserveBps"
       | "s_seniorPremium"
-      | "setAlpha"
       | "setJuniorPremium"
       | "setReserveBps"
       | "setSeniorPremium"
@@ -63,7 +59,6 @@ export interface RiskParamsInterface extends Interface {
 
   getEvent(
     nameOrSignatureOrTopic:
-      | "AlphaUpdated"
       | "JuniorPremiumUpdated"
       | "OwnershipTransferStarted"
       | "OwnershipTransferred"
@@ -71,7 +66,6 @@ export interface RiskParamsInterface extends Interface {
       | "SeniorPremiumUpdated"
   ): EventFragment;
 
-  encodeFunctionData(functionFragment: "MAX_ALPHA", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "MAX_JUNIOR_XY",
     values?: undefined
@@ -88,7 +82,6 @@ export interface RiskParamsInterface extends Interface {
     functionFragment: "MAX_SENIOR_XY",
     values?: undefined
   ): string;
-  encodeFunctionData(functionFragment: "MIN_ALPHA", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "acceptOwnership",
     values?: undefined
@@ -102,7 +95,6 @@ export interface RiskParamsInterface extends Interface {
     functionFragment: "renounceOwnership",
     values?: undefined
   ): string;
-  encodeFunctionData(functionFragment: "s_alpha", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "s_juniorPremium",
     values?: undefined
@@ -114,10 +106,6 @@ export interface RiskParamsInterface extends Interface {
   encodeFunctionData(
     functionFragment: "s_seniorPremium",
     values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "setAlpha",
-    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "setJuniorPremium",
@@ -136,7 +124,6 @@ export interface RiskParamsInterface extends Interface {
     values: [AddressLike]
   ): string;
 
-  decodeFunctionResult(functionFragment: "MAX_ALPHA", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "MAX_JUNIOR_XY",
     data: BytesLike
@@ -153,7 +140,6 @@ export interface RiskParamsInterface extends Interface {
     functionFragment: "MAX_SENIOR_XY",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "MIN_ALPHA", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "acceptOwnership",
     data: BytesLike
@@ -167,7 +153,6 @@ export interface RiskParamsInterface extends Interface {
     functionFragment: "renounceOwnership",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "s_alpha", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "s_juniorPremium",
     data: BytesLike
@@ -180,7 +165,6 @@ export interface RiskParamsInterface extends Interface {
     functionFragment: "s_seniorPremium",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "setAlpha", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "setJuniorPremium",
     data: BytesLike
@@ -197,18 +181,6 @@ export interface RiskParamsInterface extends Interface {
     functionFragment: "transferOwnership",
     data: BytesLike
   ): Result;
-}
-
-export namespace AlphaUpdatedEvent {
-  export type InputTuple = [alpha: BigNumberish];
-  export type OutputTuple = [alpha: bigint];
-  export interface OutputObject {
-    alpha: bigint;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace JuniorPremiumUpdatedEvent {
@@ -320,8 +292,6 @@ export interface RiskParams extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  MAX_ALPHA: TypedContractMethod<[], [bigint], "view">;
-
   MAX_JUNIOR_XY: TypedContractMethod<[], [bigint], "view">;
 
   MAX_RESERVE_BPS: TypedContractMethod<[], [bigint], "view">;
@@ -330,8 +300,6 @@ export interface RiskParams extends BaseContract {
 
   MAX_SENIOR_XY: TypedContractMethod<[], [bigint], "view">;
 
-  MIN_ALPHA: TypedContractMethod<[], [bigint], "view">;
-
   acceptOwnership: TypedContractMethod<[], [void], "nonpayable">;
 
   owner: TypedContractMethod<[], [string], "view">;
@@ -339,8 +307,6 @@ export interface RiskParams extends BaseContract {
   pendingOwner: TypedContractMethod<[], [string], "view">;
 
   renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
-
-  s_alpha: TypedContractMethod<[], [bigint], "view">;
 
   s_juniorPremium: TypedContractMethod<
     [],
@@ -355,8 +321,6 @@ export interface RiskParams extends BaseContract {
     [[bigint, bigint, bigint] & { x: bigint; y: bigint; k: bigint }],
     "view"
   >;
-
-  setAlpha: TypedContractMethod<[alpha_: BigNumberish], [void], "nonpayable">;
 
   setJuniorPremium: TypedContractMethod<
     [curve: RiskParams.PremiumCurveStruct],
@@ -387,9 +351,6 @@ export interface RiskParams extends BaseContract {
   ): T;
 
   getFunction(
-    nameOrSignature: "MAX_ALPHA"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
     nameOrSignature: "MAX_JUNIOR_XY"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -400,9 +361,6 @@ export interface RiskParams extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "MAX_SENIOR_XY"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "MIN_ALPHA"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "acceptOwnership"
@@ -416,9 +374,6 @@ export interface RiskParams extends BaseContract {
   getFunction(
     nameOrSignature: "renounceOwnership"
   ): TypedContractMethod<[], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "s_alpha"
-  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "s_juniorPremium"
   ): TypedContractMethod<
@@ -436,9 +391,6 @@ export interface RiskParams extends BaseContract {
     [[bigint, bigint, bigint] & { x: bigint; y: bigint; k: bigint }],
     "view"
   >;
-  getFunction(
-    nameOrSignature: "setAlpha"
-  ): TypedContractMethod<[alpha_: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setJuniorPremium"
   ): TypedContractMethod<
@@ -460,13 +412,6 @@ export interface RiskParams extends BaseContract {
     nameOrSignature: "transferOwnership"
   ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
 
-  getEvent(
-    key: "AlphaUpdated"
-  ): TypedContractEvent<
-    AlphaUpdatedEvent.InputTuple,
-    AlphaUpdatedEvent.OutputTuple,
-    AlphaUpdatedEvent.OutputObject
-  >;
   getEvent(
     key: "JuniorPremiumUpdated"
   ): TypedContractEvent<
@@ -504,17 +449,6 @@ export interface RiskParams extends BaseContract {
   >;
 
   filters: {
-    "AlphaUpdated(uint256)": TypedContractEvent<
-      AlphaUpdatedEvent.InputTuple,
-      AlphaUpdatedEvent.OutputTuple,
-      AlphaUpdatedEvent.OutputObject
-    >;
-    AlphaUpdated: TypedContractEvent<
-      AlphaUpdatedEvent.InputTuple,
-      AlphaUpdatedEvent.OutputTuple,
-      AlphaUpdatedEvent.OutputObject
-    >;
-
     "JuniorPremiumUpdated(uint256,uint256,uint256)": TypedContractEvent<
       JuniorPremiumUpdatedEvent.InputTuple,
       JuniorPremiumUpdatedEvent.OutputTuple,

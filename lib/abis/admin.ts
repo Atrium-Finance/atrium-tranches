@@ -316,13 +316,6 @@ export const RISK_PARAMS_ABI = [
   },
   {
     inputs: [],
-    name: "s_alpha",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
     name: "s_reserveBps",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
@@ -359,13 +352,6 @@ export const RISK_PARAMS_ABI = [
       },
     ],
     name: "setJuniorPremium",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ name: "alpha_", type: "uint256" }],
-    name: "setAlpha",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",

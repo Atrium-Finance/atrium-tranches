@@ -34,10 +34,6 @@ describe("RiskParams", () => {
       expect(k).to.equal(BigInt("500000000000000000")); // 0.5e18
     });
 
-    it("should set correct alpha default", async () => {
-      expect(await riskParams.s_alpha()).to.equal(BigInt("600000000000000000")); // 0.60e18
-    });
-
     it("should set correct reserveBps default", async () => {
       expect(await riskParams.s_reserveBps()).to.equal(500);
     });
@@ -178,52 +174,6 @@ describe("RiskParams", () => {
       };
       await expect(
         riskParams.connect(other).setJuniorPremium(curve),
-      ).to.be.revertedWithCustomError(riskParams, "OwnableUnauthorizedAccount");
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  setAlpha
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe("setAlpha", () => {
-    it("should update alpha with valid value", async () => {
-      const newAlpha = (70n * E18) / 100n;
-      await expect(riskParams.setAlpha(newAlpha))
-        .to.emit(riskParams, "AlphaUpdated")
-        .withArgs(newAlpha);
-      expect(await riskParams.s_alpha()).to.equal(newAlpha);
-    });
-
-    it("should accept alpha at min boundary (0.40e18)", async () => {
-      await expect(riskParams.setAlpha((40n * E18) / 100n)).to.not.be.reverted;
-    });
-
-    it("should accept alpha at max boundary (0.80e18)", async () => {
-      await expect(riskParams.setAlpha((80n * E18) / 100n)).to.not.be.reverted;
-    });
-
-    it("should revert when alpha < 0.40e18", async () => {
-      await expect(
-        riskParams.setAlpha((39n * E18) / 100n),
-      ).to.be.revertedWithCustomError(
-        riskParams,
-        "PrimeVaults__AlphaOutOfRange",
-      );
-    });
-
-    it("should revert when alpha > 0.80e18", async () => {
-      await expect(
-        riskParams.setAlpha((81n * E18) / 100n),
-      ).to.be.revertedWithCustomError(
-        riskParams,
-        "PrimeVaults__AlphaOutOfRange",
-      );
-    });
-
-    it("should revert when called by non-owner", async () => {
-      await expect(
-        riskParams.connect(other).setAlpha((60n * E18) / 100n),
       ).to.be.revertedWithCustomError(riskParams, "OwnableUnauthorizedAccount");
     });
   });
