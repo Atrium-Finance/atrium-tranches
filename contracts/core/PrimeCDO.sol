@@ -28,7 +28,7 @@ interface ITrancheVaultBurn {
  * @title PrimeCDO
  * @notice Core orchestrator connecting TrancheVaults to a single Strategy via Accounting.
  * @dev Handles deposit routing, coverage gates, and cooldown management.
- *      All three tranches are base-asset only. 1 CDO = 1 Strategy (Strata model).
+ *      Two tranches (Senior + Junior), base-asset only. 1 CDO = 1 Strategy (Strata model).
  *      See docs/PV_V3_COVERAGE_GATE.md for coverage gate logic.
  */
 contract PrimeCDO is Ownable2Step, IPrimeCDO {
@@ -149,7 +149,7 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
 
     /**
      * @notice Deposit base asset into any tranche.
-     * @dev Coverage gate: reverts if coverage < 105% for Sr/Mz. Junior always allowed.
+     * @dev Coverage gate: reverts if coverage < 105% for Senior. Junior always allowed.
      *      See docs/PV_V3_COVERAGE_GATE.md section 3.
      */
     function deposit(
@@ -162,12 +162,9 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         // 1. Update accounting
         _updateAccounting();
 
-        // 2. Per-tranche coverage gate (Junior always allowed — increases coverage)
-        if (tranche != TrancheId.JUNIOR) {
-            uint256 coverage;
-            if (tranche == TrancheId.SENIOR) coverage = _getCoverageSenior();
-            else coverage = _getCoverageMezz();
-
+        // 2. Senior coverage gate (Junior always allowed — increases coverage)
+        if (tranche == TrancheId.SENIOR) {
+            uint256 coverage = _getCoverageSenior();
             if (coverage < s_minCoverageForDeposit)
                 revert PrimeVaults__CoverageTooLow(coverage, s_minCoverageForDeposit);
         }
@@ -438,29 +435,13 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
     }
 
     /**
-     * @dev Senior coverage: cs = (Sr + Mz + Jr) / Sr.
+     * @dev Senior coverage: cs = (Sr + Jr) / Sr.
      *      If Sr=0: empty protocol → max (allow first deposit).
      */
     function _getCoverageSenior() internal view returns (uint256) {
-        (uint256 sr, uint256 mz, uint256 jr) = i_accounting.getAllTVLs();
-        if (sr == 0) {
-            if (mz + jr > 0) return type(uint256).max; // Sr doesn't exist yet, no gate needed
-            return type(uint256).max; // empty protocol → allow first deposit
-        }
-        return ((sr + mz + jr) * PRECISION) / sr;
-    }
-
-    /**
-     * @dev Mezzanine coverage: cm = (Mz + Jr) / Mz.
-     *      If Mz=0: empty → max (allow first deposit).
-     */
-    function _getCoverageMezz() internal view returns (uint256) {
-        (, uint256 mz, uint256 jr) = i_accounting.getAllTVLs();
-        if (mz == 0) {
-            if (jr > 0) return type(uint256).max; // Mz doesn't exist yet
-            return type(uint256).max; // empty
-        }
-        return ((mz + jr) * PRECISION) / mz;
+        (uint256 sr, uint256 jr) = i_accounting.getAllTVLs();
+        if (sr == 0) return type(uint256).max;
+        return ((sr + jr) * PRECISION) / sr;
     }
 
     /**

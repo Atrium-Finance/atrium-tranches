@@ -16,13 +16,12 @@ import { FixedPointMath } from "../libraries/FixedPointMath.sol";
 /**
  * @title Accounting
  * @notice Tracks per-tranche TVL for a single PrimeVaults market.
- * @dev Senior + Mezzanine + Junior + Reserve. All tranches are base-asset only.
- *      Gain splitting: Senior gets target APY, Mezz gets MAX(floor, subPoolAPY*(1-RP2)), Junior gets residual.
- *      Loss waterfall (4 layers): Junior → Mezzanine → Senior yield-tier → Senior principal-tier.
+ * @dev Senior + Junior + Reserve. All tranches are base-asset only.
+ *      Gain splitting: Senior gets target APY, Junior gets residual.
+ *      Loss waterfall (3 layers): Junior → Senior yield-tier → Senior principal-tier.
  *      Senior principal (s_seniorPrincipal) is the locked-in USDai value at deposit-time
- *      sUSDai/USDai exchange rate — when sUSDai depreciates, Junior/Mezz/Senior-yield absorb
+ *      sUSDai/USDai exchange rate — when sUSDai depreciates, Junior and Senior-yield absorb
  *      the USDai shortfall before Senior's locked-in value is touched.
- *      Mezz has yield protection (target APY in _splitGain) but no principal protection.
  *      See MATH_REFERENCE §C1-C4 for gain splitting, §D1-D4 for loss waterfall.
  */
 contract Accounting is IAccounting {
@@ -53,17 +52,15 @@ contract Accounting is IAccounting {
      * @dev Equivalent to "sum of USDai amounts at deposit time" — every recordDeposit(SENIOR, x)
      *      captures the USDai-value of x at the prevailing sUSDai/USDai exchange rate at that
      *      moment. When sUSDai depreciates, current strategy USDai-value drops; the loss
-     *      waterfall absorbs from Junior → Mezz → Senior yield-tier (s_seniorTVL - this) →
-     *      Senior principal-tier (this), preserving the locked-in value as long as the lower
-     *      tranches and Senior's accrued yield can cover.
+     *      waterfall absorbs from Junior → Senior yield-tier (s_seniorTVL - this) → Senior
+     *      principal-tier (this), preserving the locked-in value as long as Junior and
+     *      Senior's accrued yield can cover.
      */
     uint256 public s_seniorPrincipal;
-    uint256 public s_mezzTVL;
     uint256 public s_juniorBaseTVL;
     uint256 public s_reserveTVL;
     uint256 public s_lastUpdateTimestamp;
     uint256 public s_srtTargetIndex;
-    uint256 public s_mzTargetIndex;
 
     address public s_primeCDO;
 
@@ -75,11 +72,10 @@ contract Accounting is IAccounting {
     event DepositRecorded(TrancheId indexed tranche, uint256 amount);
     event WithdrawRecorded(TrancheId indexed tranche, uint256 amount);
     event FeeRecorded(TrancheId indexed tranche, uint256 feeAmount);
-    event GainSplit(uint256 netGain, uint256 seniorGain, uint256 mezzGain, uint256 juniorGain, uint256 reserveCut);
+    event GainSplit(uint256 netGain, uint256 seniorGainTarget, uint256 juniorGain, uint256 reserveCut);
     event LossApplied(
         uint256 loss,
         uint256 jrAbsorbed,
-        uint256 mzAbsorbed,
         uint256 srYieldAbsorbed,
         uint256 srPrincipalAbsorbed
     );
@@ -113,7 +109,6 @@ contract Accounting is IAccounting {
         i_aprFeed = IAprPairFeed(aprFeed_);
         i_riskParams = RiskParams(riskParams_);
         s_srtTargetIndex = PRECISION; // init: 1e18
-        s_mzTargetIndex = PRECISION; // init: 1e18
         s_lastUpdateTimestamp = block.timestamp;
     }
 
@@ -144,7 +139,7 @@ contract Accounting is IAccounting {
      */
     function updateTVL(uint256 currentStrategyTVL) external override onlyCDO {
         // C1: Strategy gain = current - previous tracked strategy TVL
-        uint256 prevStrategyTVL = s_seniorTVL + s_mezzTVL + s_juniorBaseTVL + s_reserveTVL;
+        uint256 prevStrategyTVL = s_seniorTVL + s_juniorBaseTVL + s_reserveTVL;
 
         if (prevStrategyTVL == 0) {
             s_lastUpdateTimestamp = block.timestamp;
@@ -159,7 +154,7 @@ contract Accounting is IAccounting {
             uint256 strategyGain = currentStrategyTVL - prevStrategyTVL;
             _splitGain(strategyGain, deltaT);
         } else {
-            // Loss path (D4) — 3-layer waterfall: Junior → Mezz → Senior
+            // Loss path (D4) — 3-layer waterfall: Junior → Senior yield → Senior principal
             uint256 loss = prevStrategyTVL - currentStrategyTVL;
             _applyLossWaterfall(loss);
         }
@@ -213,7 +208,6 @@ contract Accounting is IAccounting {
     /** @notice Get TVL for a specific tranche. */
     function getTrancheTVL(TrancheId id) external view override returns (uint256) {
         if (id == TrancheId.SENIOR) return s_seniorTVL;
-        if (id == TrancheId.MEZZ) return s_mezzTVL;
         if (id == TrancheId.JUNIOR) return s_juniorBaseTVL;
         revert PrimeVaults__InvalidTrancheId();
     }
@@ -223,10 +217,9 @@ contract Accounting is IAccounting {
         return s_juniorBaseTVL;
     }
 
-    /** @notice Get TVL for all three tranches. */
-    function getAllTVLs() external view override returns (uint256 sr, uint256 mz, uint256 jr) {
+    /** @notice Get TVL for both tranches. */
+    function getAllTVLs() external view override returns (uint256 sr, uint256 jr) {
         sr = s_seniorTVL;
-        mz = s_mezzTVL;
         jr = s_juniorBaseTVL;
     }
 
@@ -236,7 +229,7 @@ contract Accounting is IAccounting {
     }
 
     /**
-     * @notice Compute current Senior APY using APR feed + risk premiums.
+     * @notice Compute current Senior APY using APR feed + risk premium.
      * @dev APY_sr = MAX(aaveBenchmark, baseAPY × (1 - RP1)). See MATH_REFERENCE §E5.
      */
     function getSeniorAPY() external view override returns (uint256) {
@@ -244,16 +237,9 @@ contract Accounting is IAccounting {
     }
 
     /**
-     * @notice Compute current Mezzanine APY using APR feed + risk premiums.
-     * @dev APY_mz = MAX(aaveBenchmark, subPoolAPY × (1 - RP2)). See MATH_REFERENCE §E6.
-     */
-    function getMezzAPY() external view override returns (uint256) {
-        return _computeMezzAPY();
-    }
-
-    /**
      * @notice Compute Junior residual APY.
-     * @dev Junior gets the residual after Senior and Mezzanine target claims.
+     * @dev Junior == sub-pool. JuniorAPY = baseAPY + (baseAPY - seniorAPY) × (Sr / Jr).
+     *      Floor active: JuniorAPY = max(0, baseAPY - (seniorAPY - baseAPY) × (Sr / Jr)).
      *      See MATH_REFERENCE §C5.
      * @return Junior residual APY as 18-decimal fixed-point
      */
@@ -267,9 +253,9 @@ contract Accounting is IAccounting {
 
     /**
      * @dev Split positive strategy gain across tranches. See MATH_REFERENCE §C2-C5.
-     *      Priority: reserve cut → Senior target → Mezz target → Junior residual.
-     *      If yield insufficient for Senior + Mezz targets, the deficit is applied
-     *      via the loss waterfall (Junior → Mezz → Senior).
+     *      Priority: reserve cut → Senior target → Junior residual.
+     *      If yield insufficient for Senior target, the deficit is applied via the
+     *      loss waterfall (Junior → Senior yield → Senior principal).
      */
     function _splitGain(uint256 strategyGain, uint256 deltaT) internal {
         // C2: Reserve cut (only on positive gains)
@@ -288,34 +274,20 @@ contract Accounting is IAccounting {
             s_srtTargetIndex = (s_srtTargetIndex * (PRECISION + interestFactor)) / PRECISION;
         }
 
-        // C4: Mezzanine target gain (compound index)
-        uint256 apyMz = _computeMezzAPY();
-        uint256 mezzGainTarget = (s_mezzTVL * apyMz * deltaT) / (YEAR * PRECISION);
-
-        // Update Mezz target index
-        if (s_mezzTVL > 0 && apyMz > 0) {
-            uint256 interestFactor = (apyMz * deltaT) / YEAR;
-            s_mzTargetIndex = (s_mzTargetIndex * (PRECISION + interestFactor)) / PRECISION;
-        }
-
-        // C5: Senior + Mezz always receive their full target.
+        // C5: Senior always receives full target.
         // If yield insufficient, the deficit hits the loss waterfall.
-        uint256 totalTarget = seniorGainTarget + mezzGainTarget;
-
-        // Always credit full targets
         s_seniorTVL += seniorGainTarget;
-        s_mezzTVL += mezzGainTarget;
 
-        if (netGain >= totalTarget) {
+        if (netGain >= seniorGainTarget) {
             // CASE A: yield sufficient — Junior gets the residual
-            uint256 juniorGain = netGain - totalTarget;
+            uint256 juniorGain = netGain - seniorGainTarget;
             s_juniorBaseTVL += juniorGain;
-            emit GainSplit(netGain, seniorGainTarget, mezzGainTarget, juniorGain, reserveCut);
+            emit GainSplit(netGain, seniorGainTarget, juniorGain, reserveCut);
         } else {
             // CASE B: yield insufficient — deficit applied via loss waterfall
-            uint256 deficit = totalTarget - netGain;
+            uint256 deficit = seniorGainTarget - netGain;
             _applyLossWaterfall(deficit);
-            emit GainSplit(netGain, seniorGainTarget, mezzGainTarget, 0, reserveCut);
+            emit GainSplit(netGain, seniorGainTarget, 0, reserveCut);
         }
     }
 
@@ -324,11 +296,10 @@ contract Accounting is IAccounting {
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * @dev Apply 4-layer loss waterfall. See MATH_REFERENCE §D4.
+     * @dev Apply 3-layer loss waterfall. See MATH_REFERENCE §D4.
      *      Layer 1: Junior (first loss)
-     *      Layer 2: Mezzanine (full TVL — yield protection only, no principal protection)
-     *      Layer 3: Senior yield-tier (s_seniorTVL - s_seniorPrincipal)
-     *      Layer 4: Senior principal-tier (last resort)
+     *      Layer 2: Senior yield-tier (s_seniorTVL - s_seniorPrincipal)
+     *      Layer 3: Senior principal-tier (last resort)
      */
     function _applyLossWaterfall(uint256 loss) internal {
         uint256 remaining = loss;
@@ -338,18 +309,13 @@ contract Accounting is IAccounting {
         s_juniorBaseTVL -= jrAbsorbed;
         remaining -= jrAbsorbed;
 
-        // Layer 2: Mezzanine (full TVL — no principal protection)
-        uint256 mzAbsorbed = remaining > s_mezzTVL ? s_mezzTVL : remaining;
-        s_mezzTVL -= mzAbsorbed;
-        remaining -= mzAbsorbed;
-
-        // Layer 3: Senior yield-tier
+        // Layer 2: Senior yield-tier
         uint256 seniorYield = s_seniorTVL > s_seniorPrincipal ? s_seniorTVL - s_seniorPrincipal : 0;
         uint256 srYieldAbsorbed = remaining > seniorYield ? seniorYield : remaining;
         s_seniorTVL -= srYieldAbsorbed;
         remaining -= srYieldAbsorbed;
 
-        // Layer 4: Senior principal-tier (last resort)
+        // Layer 3: Senior principal-tier (last resort)
         uint256 srPrincipalAbsorbed = remaining > s_seniorPrincipal ? s_seniorPrincipal : remaining;
         if (srPrincipalAbsorbed > 0) {
             s_seniorTVL -= srPrincipalAbsorbed;
@@ -357,7 +323,7 @@ contract Accounting is IAccounting {
             emit SeniorPrincipalAbsorbed(srPrincipalAbsorbed, s_seniorPrincipal);
         }
 
-        emit LossApplied(loss, jrAbsorbed, mzAbsorbed, srYieldAbsorbed, srPrincipalAbsorbed);
+        emit LossApplied(loss, jrAbsorbed, srYieldAbsorbed, srPrincipalAbsorbed);
     }
 
     /**
@@ -390,10 +356,10 @@ contract Accounting is IAccounting {
 
     /**
      * @dev Compute RP1 = x + y × ratio_sr^k. See MATH_REFERENCE §E3.
-     *      ratio_sr = TVL_sr / Pool_TVL
+     *      ratio_sr = TVL_sr / (TVL_sr + TVL_jr)
      */
     function _computeRP1() internal view returns (uint256) {
-        uint256 pool = s_seniorTVL + s_mezzTVL + s_juniorBaseTVL;
+        uint256 pool = s_seniorTVL + s_juniorBaseTVL;
         if (pool == 0 || s_seniorTVL == 0) return 0;
 
         uint256 ratioSr = s_seniorTVL.fpDiv(pool);
@@ -404,39 +370,22 @@ contract Accounting is IAccounting {
     }
 
     /**
-     * @dev Compute RP2 = x + y × ratio_mz_sub^k. See MATH_REFERENCE §E6.
-     *      ratio_mz_sub = TVL_mz / (TVL_mz + Jr)
-     */
-    function _computeRP2() internal view returns (uint256) {
-        uint256 mzPlusJr = s_mezzTVL + s_juniorBaseTVL;
-        if (mzPlusJr == 0) return 0;
-
-        uint256 ratioMzSub = s_mezzTVL.fpDiv(mzPlusJr);
-
-        (uint256 x, uint256 y, uint256 k) = i_riskParams.s_juniorPremium();
-        uint256 rPow = ratioMzSub.fpow(k);
-        return x + y.fpMul(rPow);
-    }
-
-    /**
-     * @dev Read APR pair from feed. Returns (0, 0, 0) if feed is not a contract or call fails.
+     * @dev Read APR pair from feed. Returns (0, 0) if feed is not a contract or call fails.
      * @return aaveBenchSenior Senior aprTarget floor (12dec → 18dec) from feed
-     * @return aaveBenchMezz Mezz aprTarget floor (12dec → 18dec) from feed
      * @return strategyAPR Actual sUSDai yield rate (used as base APY for gain splitting)
      */
     function _getAprPair()
         internal
         view
-        returns (uint256 aaveBenchSenior, uint256 aaveBenchMezz, uint256 strategyAPR)
+        returns (uint256 aaveBenchSenior, uint256 strategyAPR)
     {
         address feed = address(i_aprFeed);
-        if (feed == address(0) || feed.code.length == 0) return (0, 0, 0);
+        if (feed == address(0) || feed.code.length == 0) return (0, 0);
         try i_aprFeed.latestRoundData() returns (IAprPairFeed.TRound memory round) {
             aaveBenchSenior = _aprTo18Dec(round.aprTargetSenior);
-            aaveBenchMezz = _aprTo18Dec(round.aprTargetMezz);
             strategyAPR = _aprTo18Dec(round.aprBase);
         } catch {
-            return (0, 0, 0);
+            return (0, 0);
         }
     }
 
@@ -444,7 +393,7 @@ contract Accounting is IAccounting {
      * @dev Base APR = strategy APR (no dilution — all tranches are base-asset only).
      */
     function _computeBaseAPY() internal view returns (uint256) {
-        (, , uint256 strategyAPR) = _getAprPair();
+        (, uint256 strategyAPR) = _getAprPair();
         return strategyAPR;
     }
 
@@ -452,7 +401,7 @@ contract Accounting is IAccounting {
      * @dev APY_sr = MAX(aaveBenchSenior, baseAPY × (1 - RP1)). See MATH_REFERENCE §E4.
      */
     function _computeSeniorAPY() internal view returns (uint256) {
-        (uint256 aaveBenchSenior, , ) = _getAprPair();
+        (uint256 aaveBenchSenior, ) = _getAprPair();
         uint256 baseAPY = _computeBaseAPY();
 
         uint256 rp1 = _computeRP1();
@@ -463,72 +412,28 @@ contract Accounting is IAccounting {
     }
 
     /**
-     * @dev Compute sub-pool effective APR. See MATH_REFERENCE §E5.
-     *      APY_sub = APY_base + (APY_base - APY_sr) × TVL_sr / (TVL_mz + Jr)
-     *      Can be negative when floor is active (clamped to 0).
-     */
-    function _computeSubPoolAPY() internal view returns (uint256) {
-        uint256 baseAPY = _computeBaseAPY();
-        uint256 apySr = _computeSeniorAPY();
-
-        uint256 mzPlusJr = s_mezzTVL + s_juniorBaseTVL;
-        if (mzPlusJr == 0) return 0;
-
-        uint256 leverage = s_seniorTVL > 0 ? s_seniorTVL.fpDiv(mzPlusJr) : 0;
-
-        if (baseAPY >= apySr) {
-            // Normal case: sub-pool gets boosted by RP1 transfer from Senior
-            uint256 bonus = (baseAPY - apySr).fpMul(leverage);
-            return baseAPY + bonus;
-        } else {
-            // Floor active: sub-pool pays for Senior floor guarantee
-            uint256 deficit = (apySr - baseAPY).fpMul(leverage);
-            if (baseAPY > deficit) return baseAPY - deficit;
-            return 0;
-        }
-    }
-
-    /**
-     * @dev APY_mz = MAX(aaveBenchMezz, APY_sub × (1 - RP2)). See MATH_REFERENCE §E7.
-     *      Floor = per-tranche Mezz aprTarget from AprPairFeed.
-     */
-    function _computeMezzAPY() internal view returns (uint256) {
-        (, uint256 aaveBenchMezz, ) = _getAprPair();
-
-        uint256 subPoolAPY = _computeSubPoolAPY();
-
-        uint256 apyMz;
-        if (subPoolAPY > 0) {
-            uint256 rp2 = _computeRP2();
-            apyMz = rp2 < PRECISION ? subPoolAPY.fpMul(PRECISION - rp2) : 0;
-        }
-
-        return apyMz > aaveBenchMezz ? apyMz : aaveBenchMezz;
-    }
-
-    /**
-     * @dev Compute Junior APR (residual after Senior + Mezz).
-     *      APY_jr = APY_sub + (APY_sub - APY_mz) × TVL_mz / Jr
-     *      See MATH_REFERENCE §E8.
+     * @dev Compute Junior APR (Junior == entire sub-pool in the 2-tranche model).
+     *      Normal (baseAPY ≥ seniorAPY): JuniorAPY = baseAPY + (baseAPY - seniorAPY) × Sr/Jr.
+     *      Floor active (baseAPY < seniorAPY): JuniorAPY = max(0, baseAPY - (seniorAPY - baseAPY) × Sr/Jr).
+     *      See MATH_REFERENCE §E5.
      */
     function _computeJuniorAPY() internal view returns (uint256) {
         if (s_juniorBaseTVL == 0) return 0;
 
-        uint256 subPoolAPY = _computeSubPoolAPY();
-        if (subPoolAPY == 0) return 0;
+        uint256 baseAPY = _computeBaseAPY();
+        uint256 apySr = _computeSeniorAPY();
 
-        uint256 apyMz = _computeMezzAPY();
+        uint256 leverage = s_seniorTVL > 0 ? s_seniorTVL.fpDiv(s_juniorBaseTVL) : 0;
 
-        // APY_jr = APY_sub + (APY_sub - APY_mz) × TVL_mz / Jr
-        if (s_mezzTVL == 0) return subPoolAPY;
-
-        uint256 mezzLeverage = s_mezzTVL.fpDiv(s_juniorBaseTVL);
-
-        if (subPoolAPY >= apyMz) {
-            uint256 bonus = (subPoolAPY - apyMz).fpMul(mezzLeverage);
-            return subPoolAPY + bonus;
+        if (baseAPY >= apySr) {
+            // Normal: Junior absorbs Senior's discount with leverage
+            uint256 bonus = (baseAPY - apySr).fpMul(leverage);
+            return baseAPY + bonus;
+        } else {
+            // Floor active: Junior pays for Senior's floor guarantee
+            uint256 deficit = (apySr - baseAPY).fpMul(leverage);
+            return baseAPY > deficit ? baseAPY - deficit : 0;
         }
-        return 0;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -537,7 +442,6 @@ contract Accounting is IAccounting {
 
     function _addToTranche(TrancheId id, uint256 amount) internal {
         if (id == TrancheId.SENIOR) s_seniorTVL += amount;
-        else if (id == TrancheId.MEZZ) s_mezzTVL += amount;
         else if (id == TrancheId.JUNIOR) s_juniorBaseTVL += amount;
         else revert PrimeVaults__InvalidTrancheId();
     }
@@ -545,7 +449,6 @@ contract Accounting is IAccounting {
     /** @dev Subtract from tranche TVL. Clamp to 0 instead of leaving dust. */
     function _subFromTranche(TrancheId id, uint256 amount) internal {
         if (id == TrancheId.SENIOR) s_seniorTVL = amount >= s_seniorTVL ? 0 : s_seniorTVL - amount;
-        else if (id == TrancheId.MEZZ) s_mezzTVL = amount >= s_mezzTVL ? 0 : s_mezzTVL - amount;
         else if (id == TrancheId.JUNIOR) s_juniorBaseTVL = amount >= s_juniorBaseTVL ? 0 : s_juniorBaseTVL - amount;
         else revert PrimeVaults__InvalidTrancheId();
     }

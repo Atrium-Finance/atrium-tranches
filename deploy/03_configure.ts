@@ -8,7 +8,7 @@
  *   - Set coverage gate params
  *   - Grant KEEPER_ROLE on AprPairFeed (PrimeCDO + optional bot keeper)
  *   - If TEST_MODE=1: override RedemptionPolicy cooldowns to short test durations
- *     (ASSETS_LOCK = 3min, SHARES_LOCK = 5min) for all 3 tranches
+ *     (ASSETS_LOCK = 3min, SHARES_LOCK = 5min) for both tranches
  *
  * Requires: deploy/01 and deploy/02 have been run.
  *
@@ -24,8 +24,7 @@ import { DEFAULTS, TEST_COOLDOWNS, loadDeployed } from "./addresses";
 
 const TRANCHES = [
   { id: 0, name: "SENIOR" },
-  { id: 1, name: "MEZZ" },
-  { id: 2, name: "JUNIOR" },
+  { id: 1, name: "JUNIOR" },
 ] as const;
 
 async function main() {
@@ -57,7 +56,7 @@ async function main() {
 
   const cdo = await hre.ethers.getContractAt("PrimeCDO", d.primeCDO);
   for (const t of TRANCHES) {
-    const vault = t.id === 0 ? d.seniorVault : t.id === 1 ? d.mezzVault : d.juniorVault;
+    const vault = t.id === 0 ? d.seniorVault : d.juniorVault;
     const current = await cdo.s_tranches(t.id);
     if (current === hre.ethers.ZeroAddress) {
       await (await cdo.registerTranche(t.id, vault)).wait();

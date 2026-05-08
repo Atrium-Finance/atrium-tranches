@@ -3,8 +3,7 @@ import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 const SENIOR = 0;
-const MEZZ = 1;
-const JUNIOR = 2;
+const JUNIOR = 1;
 
 describe("PrimeCDO — Deposits (per-tranche coverage)", () => {
   let cdo: any;
@@ -15,7 +14,6 @@ describe("PrimeCDO — Deposits (per-tranche coverage)", () => {
 
   let owner: SignerWithAddress;
   let seniorVault: SignerWithAddress;
-  let mezzVault: SignerWithAddress;
   let juniorVault: SignerWithAddress;
   let other: SignerWithAddress;
 
@@ -34,7 +32,7 @@ describe("PrimeCDO — Deposits (per-tranche coverage)", () => {
   }
 
   beforeEach(async () => {
-    [owner, seniorVault, mezzVault, juniorVault, other] = await ethers.getSigners();
+    [owner, seniorVault, juniorVault, other] = await ethers.getSigners();
 
     const BaseFactory = await ethers.getContractFactory("MockBaseAsset");
     mockUSDai = await BaseFactory.deploy("USDai", "USDai");
@@ -65,20 +63,17 @@ describe("PrimeCDO — Deposits (per-tranche coverage)", () => {
 
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(owner).registerTranche(SENIOR, seniorVault.address);
-    await cdo.connect(owner).registerTranche(MEZZ, mezzVault.address);
     await cdo.connect(owner).registerTranche(JUNIOR, juniorVault.address);
     await cdo.connect(owner).setJuniorShortfallPausePrice(0);
 
     await mockUSDai.mint(seniorVault.address, 100_000n * E18);
-    await mockUSDai.mint(mezzVault.address, 100_000n * E18);
     await mockUSDai.mint(juniorVault.address, 100_000n * E18);
     await mockUSDai.connect(seniorVault).approve(await cdo.getAddress(), ethers.MaxUint256);
-    await mockUSDai.connect(mezzVault).approve(await cdo.getAddress(), ethers.MaxUint256);
     await mockUSDai.connect(juniorVault).approve(await cdo.getAddress(), ethers.MaxUint256);
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  Senior deposit — cs = (Sr+Mz+Jr)/Sr
+  //  Senior deposit — cs = (Sr+Jr)/Sr
   // ═══════════════════════════════════════════════════════════════════
 
   describe("Senior deposit — healthy cs", () => {
@@ -108,8 +103,8 @@ describe("PrimeCDO — Deposits (per-tranche coverage)", () => {
       ).to.not.be.reverted;
     });
 
-    it("should revert when cs < 105% (Sr very large vs Jr+Mz)", async () => {
-      // Sr=100K, Jr=1K, Mz=0 → cs = 101K/100K = 1.01x < 1.05x
+    it("should revert when cs < 105% (Sr very large vs Jr)", async () => {
+      // Sr=100K, Jr=1K → cs = 101K/100K = 1.01x < 1.05x
       await seedTVL(SENIOR, 100_000n * E18);
       await seedTVL(JUNIOR, 1_000n * E18);
       await expect(
@@ -119,45 +114,15 @@ describe("PrimeCDO — Deposits (per-tranche coverage)", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  Mezz deposit — cm = (Mz+Jr)/Mz
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe("Mezz deposit — healthy cm", () => {
-    it("should succeed when cm > 105%", async () => {
-      // Mz=1K, Jr=10K → cm = 11K/1K = 11x ✓
-      await seedTVL(MEZZ, 1_000n * E18);
-      await seedTVL(JUNIOR, 10_000n * E18);
-      await expect(
-        cdo.connect(mezzVault).deposit(MEZZ, await mockUSDai.getAddress(), 500n * E18),
-      ).to.not.be.reverted;
-    });
-  });
-
-  describe("Mezz deposit — low cm (even if cs is fine)", () => {
-    it("should revert when cm < 105% even if cs is healthy", async () => {
-      // Sr=1K, Mz=100K, Jr=1K
-      // cs = (1K+100K+1K)/1K = 102x ✓ (very healthy for Sr)
-      // cm = (100K+1K)/100K = 1.01x < 1.05x ✗ (Mz gate blocks)
-      await seedTVL(SENIOR, 1_000n * E18);
-      await seedTVL(MEZZ, 100_000n * E18);
-      await seedTVL(JUNIOR, 1_000n * E18);
-      await expect(
-        cdo.connect(mezzVault).deposit(MEZZ, await mockUSDai.getAddress(), 500n * E18),
-      ).to.be.revertedWithCustomError(cdo, "PrimeVaults__CoverageTooLow");
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════
   //  Junior deposit — ALWAYS allowed (uses deposit(), coverage gate skipped)
   // ═══════════════════════════════════════════════════════════════════
 
   describe("Junior deposit — always allowed", () => {
-    it("should succeed even when cs and cm < 105%", async () => {
-      // Deliberately bad coverage for both Sr and Mz
+    it("should succeed even when cs < 105%", async () => {
+      // Deliberately bad coverage for Sr
       await seedTVL(SENIOR, 100_000n * E18);
-      await seedTVL(MEZZ, 100_000n * E18);
       await seedTVL(JUNIOR, 1_000n * E18);
-      // cs ≈ 1.01x, cm ≈ 1.01x — both < 1.05x
+      // cs ≈ 1.01x < 1.05x
 
       await expect(
         cdo.connect(juniorVault).deposit(JUNIOR, await mockUSDai.getAddress(), 10_000n * E18),

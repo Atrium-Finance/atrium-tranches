@@ -23,7 +23,6 @@ import type {
 export declare namespace IAprPairFeed {
   export type TRoundStruct = {
     aprTargetSenior: BigNumberish;
-    aprTargetMezz: BigNumberish;
     aprBase: BigNumberish;
     updatedAt: BigNumberish;
     answeredInRound: BigNumberish;
@@ -31,13 +30,11 @@ export declare namespace IAprPairFeed {
 
   export type TRoundStructOutput = [
     aprTargetSenior: bigint,
-    aprTargetMezz: bigint,
     aprBase: bigint,
     updatedAt: bigint,
     answeredInRound: bigint
   ] & {
     aprTargetSenior: bigint;
-    aprTargetMezz: bigint;
     aprBase: bigint;
     updatedAt: bigint;
     answeredInRound: bigint;
@@ -50,9 +47,8 @@ export interface MockAprFeedInterface extends Interface {
       | "getRoundData"
       | "latestRoundData"
       | "pushAprBase"
-      | "pushAprTarget"
+      | "pushSeniorAprTarget"
       | "setAprs"
-      | "setAprsPerTranche"
       | "updateRoundData"
   ): FunctionFragment;
 
@@ -69,16 +65,12 @@ export interface MockAprFeedInterface extends Interface {
     values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "pushAprTarget",
-    values: [BigNumberish, BigNumberish, BigNumberish]
+    functionFragment: "pushSeniorAprTarget",
+    values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "setAprs",
     values: [BigNumberish, BigNumberish]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "setAprsPerTranche",
-    values: [BigNumberish, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "updateRoundData",
@@ -98,14 +90,10 @@ export interface MockAprFeedInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "pushAprTarget",
+    functionFragment: "pushSeniorAprTarget",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "setAprs", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "setAprsPerTranche",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(
     functionFragment: "updateRoundData",
     data: BytesLike
@@ -173,24 +161,14 @@ export interface MockAprFeed extends BaseContract {
     "nonpayable"
   >;
 
-  pushAprTarget: TypedContractMethod<
-    [tranche: BigNumberish, value: BigNumberish, arg2: BigNumberish],
+  pushSeniorAprTarget: TypedContractMethod<
+    [value: BigNumberish, arg1: BigNumberish],
     [void],
     "nonpayable"
   >;
 
   setAprs: TypedContractMethod<
     [aprTarget_: BigNumberish, aprBase_: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-
-  setAprsPerTranche: TypedContractMethod<
-    [
-      aprTargetSenior_: BigNumberish,
-      aprTargetMezz_: BigNumberish,
-      aprBase_: BigNumberish
-    ],
     [void],
     "nonpayable"
   >;
@@ -219,9 +197,9 @@ export interface MockAprFeed extends BaseContract {
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "pushAprTarget"
+    nameOrSignature: "pushSeniorAprTarget"
   ): TypedContractMethod<
-    [tranche: BigNumberish, value: BigNumberish, arg2: BigNumberish],
+    [value: BigNumberish, arg1: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -229,17 +207,6 @@ export interface MockAprFeed extends BaseContract {
     nameOrSignature: "setAprs"
   ): TypedContractMethod<
     [aprTarget_: BigNumberish, aprBase_: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-  getFunction(
-    nameOrSignature: "setAprsPerTranche"
-  ): TypedContractMethod<
-    [
-      aprTargetSenior_: BigNumberish,
-      aprTargetMezz_: BigNumberish,
-      aprBase_: BigNumberish
-    ],
     [void],
     "nonpayable"
   >;

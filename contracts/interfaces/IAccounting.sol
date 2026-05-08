@@ -12,9 +12,9 @@ import {TrancheId} from "./IPrimeCDO.sol";
 /**
  * @title IAccounting
  * @notice Interface for the Accounting contract
- * @dev Tracks per-tranche TVL (Senior, Mezzanine, Junior).
- *      Splits gains: Senior gets target APY, Mezz gets MAX(floor, subPoolAPY*(1-RP2)), Junior gets residual.
- *      Loss waterfall: Junior → Mezzanine → Senior.
+ * @dev Tracks per-tranche TVL (Senior, Junior).
+ *      Splits gains: Senior gets target APY, Junior gets residual.
+ *      Loss waterfall (3 layers): Junior → Senior yield-tier → Senior principal-tier.
  *      See MATH_REFERENCE §E5 for gain splitting and §E9 for loss waterfall.
  */
 interface IAccounting {
@@ -25,8 +25,8 @@ interface IAccounting {
     /**
      * @notice Update all TVL values based on current strategy position.
      * @dev Only callable by the paired PrimeCDO. Computes gain/loss, splits gains
-     *      according to Senior/Mezz APR targets, runs 3-layer loss waterfall on negative gain.
-     *      Updates srtTargetIndex, mzTargetIndex and lastUpdateTimestamp.
+     *      according to Senior APR target (Junior gets residual), runs 3-layer loss
+     *      waterfall on negative gain. Updates srtTargetIndex and lastUpdateTimestamp.
      *      See MATH_REFERENCE §C1-C5 for gain splitting, §D4 for loss waterfall.
      * @param currentStrategyTVL Current total assets reported by the strategy
      */
@@ -81,20 +81,19 @@ interface IAccounting {
     function getJuniorTVL() external view returns (uint256);
 
     /**
-     * @notice Get TVL for all three tranches at once
+     * @notice Get TVL for both tranches at once
      * @return sr Senior TVL
-     * @return mz Mezzanine TVL
      * @return jr Junior TVL
      */
-    function getAllTVLs() external view returns (uint256 sr, uint256 mz, uint256 jr);
+    function getAllTVLs() external view returns (uint256 sr, uint256 jr);
 
     /**
      * @notice Get the Senior locked-in USDai value (sum of deposits at deposit-time
      *         sUSDai/USDai exchange rate; excludes accrued yield).
      * @dev Equivalent to (sUSDai shares Senior contributed) × (deposit-time rate). When
-     *      sUSDai depreciates, the loss waterfall absorbs from Junior → Mezz → Senior
-     *      yield-tier (TVL - principal) → Senior principal-tier (this), preserving this
-     *      locked-in value as long as the lower tranches and Senior's accrued yield can cover.
+     *      sUSDai depreciates, the loss waterfall absorbs from Junior → Senior yield-tier
+     *      (TVL - principal) → Senior principal-tier (this), preserving this locked-in
+     *      value as long as Junior and Senior's accrued yield can cover.
      * @return Senior locked-in USDai value (18 decimals)
      */
     function getSeniorPrincipal() external view returns (uint256);
@@ -109,15 +108,10 @@ interface IAccounting {
     function getSeniorAPY() external view returns (uint256);
 
     /**
-     * @notice Get the current computed Mezzanine APY
-     * @dev APY_mz = MAX(aaveBenchmark, subPoolAPY × (1 - RP2)).
-     * @return Mezzanine APY as 18-decimal fixed-point
-     */
-    function getMezzAPY() external view returns (uint256);
-
-    /**
      * @notice Get the current computed Junior residual APY
-     * @dev Residual = net strategy yield - Senior claim - Mezz claim, divided by Junior TVL.
+     * @dev Junior receives the net strategy yield minus Senior claim, leveraged by Sr/Jr.
+     *      Normal: JuniorAPY = baseAPY + (baseAPY - seniorAPY) × (Sr / Jr).
+     *      Floor active: JuniorAPY = max(0, baseAPY - (seniorAPY - baseAPY) × (Sr / Jr)).
      *      See MATH_REFERENCE §C5.
      * @return Junior residual APY as 18-decimal fixed-point
      */

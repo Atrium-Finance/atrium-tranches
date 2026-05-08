@@ -65,10 +65,7 @@ async function main() {
   const srVault = await cdo.s_tranches(0);
   check("CDO.s_tranches(SENIOR) == SeniorVault", srVault === d.seniorVault);
 
-  const mzVault = await cdo.s_tranches(1);
-  check("CDO.s_tranches(MEZZ) == MezzVault", mzVault === d.mezzVault);
-
-  const jrVault = await cdo.s_tranches(2);
+  const jrVault = await cdo.s_tranches(1);
   check("CDO.s_tranches(JUNIOR) == JuniorVault", jrVault === d.juniorVault);
 
   const paused = await cdo.s_shortfallPaused();
@@ -126,10 +123,6 @@ async function main() {
   const svault = await hre.ethers.getContractAt("TrancheVault", d.seniorVault);
   const sName = await svault.name();
   check("SeniorVault name", sName.includes("Senior"), sName);
-
-  const mvault = await hre.ethers.getContractAt("TrancheVault", d.mezzVault);
-  const mName = await mvault.name();
-  check("MezzVault name", mName.includes("Mezz"), mName);
 
   const jvault = await hre.ethers.getContractAt("TrancheVault", d.juniorVault);
   const jName = await jvault.name();

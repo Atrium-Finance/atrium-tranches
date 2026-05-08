@@ -5,7 +5,6 @@
  * cooldown handler contracts (ERC20Cooldown/SharesCooldown no longer store durations).
  *
  * Usage:
- *   npx tsx lib/scripts/set-cooldown.ts --tranche MEZZ --assets-lock 3d --shares-lock 7d
  *   npx tsx lib/scripts/set-cooldown.ts --tranche JUNIOR --assets-lock 5d --shares-lock 10d
  *   npx tsx lib/scripts/set-cooldown.ts --tranche JUNIOR --assets-lock 0s --shares-lock 0s  # testing
  *
@@ -71,7 +70,7 @@ function fmtDur(seconds: bigint): string {
 async function main() {
   const args = process.argv.slice(2);
   const trancheStr = parseFlag(args, "--tranche");
-  if (!trancheStr) throw new Error("--tranche required: SENIOR, MEZZ, or JUNIOR");
+  if (!trancheStr) throw new Error("--tranche required: SENIOR or JUNIOR");
   const tranche = parseTranche(trancheStr);
   const assetsLockStr = parseFlag(args, "--assets-lock");
   const sharesLockStr = parseFlag(args, "--shares-lock");

@@ -4,8 +4,7 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 const SENIOR = 0;
-const MEZZ = 1;
-const JUNIOR = 2;
+const JUNIOR = 1;
 
 describe("Accounting — Senior principal protection", () => {
   let accounting: any;
@@ -40,9 +39,8 @@ describe("Accounting — Senior principal protection", () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe("principal tracking", () => {
-    it("should track Senior principal on deposit, ignore Mezz and Junior deposits", async () => {
+    it("should track Senior principal on deposit, ignore Junior deposits", async () => {
       await accounting.connect(cdo).recordDeposit(SENIOR, 1000n * E18);
-      await accounting.connect(cdo).recordDeposit(MEZZ, 500n * E18);
       await accounting.connect(cdo).recordDeposit(JUNIOR, 250n * E18);
 
       expect(await accounting.s_seniorPrincipal()).to.equal(1000n * E18);
@@ -77,12 +75,11 @@ describe("Accounting — Senior principal protection", () => {
 
       // Simulate 200 yield accrual via APR feed gain split
       await mockAprFeed.setAprs(0n, 360_000_000_000n); // ~36%
-      await accounting.connect(cdo).recordDeposit(MEZZ, 1n); // dummy to seed prevTVL
+      await accounting.connect(cdo).recordDeposit(JUNIOR, 1n); // dummy to seed prevTVL
       await time.increase(DAY * 200); // accrue meaningful yield
       // Simulate gain by reporting higher strategy TVL
       const prev =
         (await accounting.s_seniorTVL()) +
-        (await accounting.s_mezzTVL()) +
         (await accounting.s_juniorBaseTVL()) +
         (await accounting.s_reserveTVL());
       await accounting.connect(cdo).updateTVL(prev + 200n * E18);
@@ -120,9 +117,9 @@ describe("Accounting — Senior principal protection", () => {
       expect(await accounting.s_reserveTVL()).to.equal(100n * E18);
     });
 
-    it("should not scale Mezz/Junior principal (only Senior is tracked)", async () => {
-      await accounting.connect(cdo).recordDeposit(MEZZ, 1000n * E18);
-      await accounting.connect(cdo).recordWithdraw(MEZZ, 500n * E18);
+    it("should not scale Junior principal (only Senior is tracked)", async () => {
+      await accounting.connect(cdo).recordDeposit(JUNIOR, 1000n * E18);
+      await accounting.connect(cdo).recordWithdraw(JUNIOR, 500n * E18);
 
       // s_seniorPrincipal stays 0 — only Senior touches it
       expect(await accounting.s_seniorPrincipal()).to.equal(0n);
@@ -134,50 +131,44 @@ describe("Accounting — Senior principal protection", () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe("loss waterfall — Senior protection", () => {
-    async function seedAll(sr: bigint, mz: bigint, jr: bigint) {
+    async function seedAll(sr: bigint, jr: bigint) {
       if (sr > 0n) await accounting.connect(cdo).recordDeposit(SENIOR, sr);
-      if (mz > 0n) await accounting.connect(cdo).recordDeposit(MEZZ, mz);
       if (jr > 0n) await accounting.connect(cdo).recordDeposit(JUNIOR, jr);
     }
 
-    it("should preserve Senior principal when loss < Junior + Mezz", async () => {
-      await seedAll(5_000n * E18, 2_000n * E18, 2_000n * E18);
+    it("should preserve Senior principal when loss < Junior", async () => {
+      await seedAll(5_000n * E18, 4_000n * E18);
       const principalBefore = await accounting.s_seniorPrincipal();
 
       await time.increase(DAY);
-      // 1500 loss: Junior(2000) absorbs all, Mezz/Senior untouched
+      // 1500 loss: Junior(4000) absorbs all, Senior untouched
       await accounting.connect(cdo).updateTVL(7_500n * E18);
 
-      expect(await accounting.s_juniorBaseTVL()).to.equal(500n * E18);
-      expect(await accounting.s_mezzTVL()).to.equal(2_000n * E18);
+      expect(await accounting.s_juniorBaseTVL()).to.equal(2_500n * E18);
       expect(await accounting.s_seniorTVL()).to.equal(5_000n * E18);
       expect(await accounting.s_seniorPrincipal()).to.equal(principalBefore);
     });
 
-    it("should preserve Senior principal when loss = Junior + Mezz exactly", async () => {
-      await seedAll(5_000n * E18, 2_000n * E18, 2_000n * E18);
+    it("should preserve Senior principal when loss = Junior exactly", async () => {
+      await seedAll(5_000n * E18, 4_000n * E18);
       const principalBefore = await accounting.s_seniorPrincipal();
 
       await time.increase(DAY);
-      // 4000 loss: Junior(2000) + Mezz(2000) wiped, Senior intact
+      // 4000 loss: Junior(4000) wiped, Senior intact
       await accounting.connect(cdo).updateTVL(5_000n * E18);
 
       expect(await accounting.s_juniorBaseTVL()).to.equal(0n);
-      expect(await accounting.s_mezzTVL()).to.equal(0n);
       expect(await accounting.s_seniorTVL()).to.equal(5_000n * E18);
       expect(await accounting.s_seniorPrincipal()).to.equal(principalBefore);
     });
 
     it("should reduce Senior TVL but preserve principal when loss eats only yield-tier", async () => {
-      // Start with senior having 5000 principal + 500 yield
-      await seedAll(5_000n * E18, 0n, 0n);
-      const cdoAddr = cdo.address;
-      // Manually inflate Senior TVL to simulate yield (no Junior/Mezz to absorb it via gain split)
-      // We use direct deposit + withdraw trick? No — simulate via gain split.
+      // Start with senior having 5000 principal + some yield from gain split
+      await seedAll(5_000n * E18, 1_000n * E18);
+      // Generate Senior yield via gain split with 0 aprTarget (Senior gets target gain via APY)
       await mockAprFeed.setAprs(0n, 365_000_000_000n); // ~36.5% APR (1% per day)
-      await accounting.connect(cdo).recordDeposit(JUNIOR, 1000n * E18);
       await time.increase(DAY * 5);
-      // Simulate 5% strategy gain → enough to credit Senior some yield
+      // Strategy gain → Senior should be credited yield
       const prev = await accounting.s_seniorTVL() + await accounting.s_juniorBaseTVL();
       await accounting.connect(cdo).updateTVL(prev + 200n * E18);
 
@@ -191,7 +182,6 @@ describe("Accounting — Senior principal protection", () => {
       const lossAmt = jrTVL + yieldBefore / 2n;
       const totalAfterLoss =
         (await accounting.s_seniorTVL()) +
-        (await accounting.s_mezzTVL()) +
         (await accounting.s_juniorBaseTVL()) +
         (await accounting.s_reserveTVL()) -
         lossAmt;
@@ -206,35 +196,34 @@ describe("Accounting — Senior principal protection", () => {
       expect(await accounting.s_seniorTVL()).to.be.gte(principalBefore);
     });
 
-    it("should reduce Senior principal only when loss exceeds Junior + Mezz + yield-tier", async () => {
-      await seedAll(5_000n * E18, 1_000n * E18, 1_000n * E18);
+    it("should reduce Senior principal only when loss exceeds Junior + yield-tier", async () => {
+      await seedAll(5_000n * E18, 2_000n * E18);
       const principalBefore = await accounting.s_seniorPrincipal();
 
       await time.increase(DAY);
-      // Total = 7000. Loss of 2500 → Junior(1000) + Mezz(1000) wiped, 500 hits Senior principal
+      // Total = 7000. Loss of 2500 → Junior(2000) wiped, 500 hits Senior.
+      // Sr has no yield (TVL == principal) → 500 hits principal directly.
       await accounting.connect(cdo).updateTVL(4_500n * E18);
 
       expect(await accounting.s_juniorBaseTVL()).to.equal(0n);
-      expect(await accounting.s_mezzTVL()).to.equal(0n);
       expect(await accounting.s_seniorTVL()).to.equal(4_500n * E18);
       expect(await accounting.s_seniorPrincipal()).to.equal(principalBefore - 500n * E18);
     });
 
     it("should fully zero Senior principal in catastrophic loss", async () => {
-      await seedAll(5_000n * E18, 1_000n * E18, 1_000n * E18);
+      await seedAll(5_000n * E18, 2_000n * E18);
       await time.increase(DAY);
 
       // Total wipeout
       await accounting.connect(cdo).updateTVL(0n);
 
       expect(await accounting.s_juniorBaseTVL()).to.equal(0n);
-      expect(await accounting.s_mezzTVL()).to.equal(0n);
       expect(await accounting.s_seniorTVL()).to.equal(0n);
       expect(await accounting.s_seniorPrincipal()).to.equal(0n);
     });
 
     it("should emit SeniorPrincipalAbsorbed when principal is touched", async () => {
-      await seedAll(5_000n * E18, 1_000n * E18, 1_000n * E18);
+      await seedAll(5_000n * E18, 2_000n * E18);
       await time.increase(DAY);
 
       await expect(accounting.connect(cdo).updateTVL(4_500n * E18))
@@ -242,8 +231,8 @@ describe("Accounting — Senior principal protection", () => {
         .withArgs(500n * E18, 4_500n * E18);
     });
 
-    it("should NOT emit SeniorPrincipalAbsorbed when waterfall stops at yield-tier", async () => {
-      await seedAll(5_000n * E18, 2_000n * E18, 2_000n * E18);
+    it("should NOT emit SeniorPrincipalAbsorbed when waterfall stops at Junior", async () => {
+      await seedAll(5_000n * E18, 4_000n * E18);
       await time.increase(DAY);
 
       const tx = await accounting.connect(cdo).updateTVL(7_500n * E18);
@@ -255,13 +244,13 @@ describe("Accounting — Senior principal protection", () => {
     });
 
     it("should emit LossApplied with split yield/principal absorbed amounts", async () => {
-      await seedAll(5_000n * E18, 1_000n * E18, 1_000n * E18);
+      await seedAll(5_000n * E18, 2_000n * E18);
       await time.increase(DAY);
 
-      // Loss 2500 → jr 1000, mz 1000, senior yield 0 (no yield), principal 500
+      // Loss 2500 → jr 2000, senior yield 0 (no yield), principal 500
       await expect(accounting.connect(cdo).updateTVL(4_500n * E18))
         .to.emit(accounting, "LossApplied")
-        .withArgs(2_500n * E18, 1_000n * E18, 1_000n * E18, 0n, 500n * E18);
+        .withArgs(2_500n * E18, 2_000n * E18, 0n, 500n * E18);
     });
   });
 
@@ -272,8 +261,7 @@ describe("Accounting — Senior principal protection", () => {
   describe("pure-gain cycles", () => {
     it("should keep Senior principal flat across gain cycles (yield goes to TVL only)", async () => {
       await accounting.connect(cdo).recordDeposit(SENIOR, 5_000n * E18);
-      await accounting.connect(cdo).recordDeposit(MEZZ, 2_000n * E18);
-      await accounting.connect(cdo).recordDeposit(JUNIOR, 1_000n * E18);
+      await accounting.connect(cdo).recordDeposit(JUNIOR, 3_000n * E18);
 
       const principalSeed = await accounting.s_seniorPrincipal();
 
@@ -284,7 +272,6 @@ describe("Accounting — Senior principal protection", () => {
         await time.increase(DAY);
         const prevTVL =
           (await accounting.s_seniorTVL()) +
-          (await accounting.s_mezzTVL()) +
           (await accounting.s_juniorBaseTVL()) +
           (await accounting.s_reserveTVL());
         const dailyGain = (prevTVL * 120n) / (1000n * 365n);

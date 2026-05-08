@@ -31,7 +31,6 @@ export interface AccountingInterface extends Interface {
       | "getAllTVLs"
       | "getJuniorAPY"
       | "getJuniorTVL"
-      | "getMezzAPY"
       | "getSeniorAPY"
       | "getSeniorPrincipal"
       | "getTrancheTVL"
@@ -42,8 +41,6 @@ export interface AccountingInterface extends Interface {
       | "recordWithdraw"
       | "s_juniorBaseTVL"
       | "s_lastUpdateTimestamp"
-      | "s_mezzTVL"
-      | "s_mzTargetIndex"
       | "s_primeCDO"
       | "s_reserveTVL"
       | "s_seniorPrincipal"
@@ -84,10 +81,6 @@ export interface AccountingInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "getMezzAPY",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "getSeniorAPY",
     values?: undefined
   ): string;
@@ -122,11 +115,6 @@ export interface AccountingInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "s_lastUpdateTimestamp",
-    values?: undefined
-  ): string;
-  encodeFunctionData(functionFragment: "s_mezzTVL", values?: undefined): string;
-  encodeFunctionData(
-    functionFragment: "s_mzTargetIndex",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -169,7 +157,6 @@ export interface AccountingInterface extends Interface {
     functionFragment: "getJuniorTVL",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "getMezzAPY", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getSeniorAPY",
     data: BytesLike
@@ -202,11 +189,6 @@ export interface AccountingInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "s_lastUpdateTimestamp",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(functionFragment: "s_mezzTVL", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "s_mzTargetIndex",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "s_primeCDO", data: BytesLike): Result;
@@ -271,22 +253,19 @@ export namespace FeeRecordedEvent {
 export namespace GainSplitEvent {
   export type InputTuple = [
     netGain: BigNumberish,
-    seniorGain: BigNumberish,
-    mezzGain: BigNumberish,
+    seniorGainTarget: BigNumberish,
     juniorGain: BigNumberish,
     reserveCut: BigNumberish
   ];
   export type OutputTuple = [
     netGain: bigint,
-    seniorGain: bigint,
-    mezzGain: bigint,
+    seniorGainTarget: bigint,
     juniorGain: bigint,
     reserveCut: bigint
   ];
   export interface OutputObject {
     netGain: bigint;
-    seniorGain: bigint;
-    mezzGain: bigint;
+    seniorGainTarget: bigint;
     juniorGain: bigint;
     reserveCut: bigint;
   }
@@ -300,21 +279,18 @@ export namespace LossAppliedEvent {
   export type InputTuple = [
     loss: BigNumberish,
     jrAbsorbed: BigNumberish,
-    mzAbsorbed: BigNumberish,
     srYieldAbsorbed: BigNumberish,
     srPrincipalAbsorbed: BigNumberish
   ];
   export type OutputTuple = [
     loss: bigint,
     jrAbsorbed: bigint,
-    mzAbsorbed: bigint,
     srYieldAbsorbed: bigint,
     srPrincipalAbsorbed: bigint
   ];
   export interface OutputObject {
     loss: bigint;
     jrAbsorbed: bigint;
-    mzAbsorbed: bigint;
     srYieldAbsorbed: bigint;
     srPrincipalAbsorbed: bigint;
   }
@@ -434,15 +410,13 @@ export interface Accounting extends BaseContract {
 
   getAllTVLs: TypedContractMethod<
     [],
-    [[bigint, bigint, bigint] & { sr: bigint; mz: bigint; jr: bigint }],
+    [[bigint, bigint] & { sr: bigint; jr: bigint }],
     "view"
   >;
 
   getJuniorAPY: TypedContractMethod<[], [bigint], "view">;
 
   getJuniorTVL: TypedContractMethod<[], [bigint], "view">;
-
-  getMezzAPY: TypedContractMethod<[], [bigint], "view">;
 
   getSeniorAPY: TypedContractMethod<[], [bigint], "view">;
 
@@ -476,10 +450,6 @@ export interface Accounting extends BaseContract {
 
   s_lastUpdateTimestamp: TypedContractMethod<[], [bigint], "view">;
 
-  s_mezzTVL: TypedContractMethod<[], [bigint], "view">;
-
-  s_mzTargetIndex: TypedContractMethod<[], [bigint], "view">;
-
   s_primeCDO: TypedContractMethod<[], [string], "view">;
 
   s_reserveTVL: TypedContractMethod<[], [bigint], "view">;
@@ -512,7 +482,7 @@ export interface Accounting extends BaseContract {
     nameOrSignature: "getAllTVLs"
   ): TypedContractMethod<
     [],
-    [[bigint, bigint, bigint] & { sr: bigint; mz: bigint; jr: bigint }],
+    [[bigint, bigint] & { sr: bigint; jr: bigint }],
     "view"
   >;
   getFunction(
@@ -520,9 +490,6 @@ export interface Accounting extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getJuniorTVL"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "getMezzAPY"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getSeniorAPY"
@@ -565,12 +532,6 @@ export interface Accounting extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "s_lastUpdateTimestamp"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "s_mezzTVL"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "s_mzTargetIndex"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "s_primeCDO"
@@ -696,7 +657,7 @@ export interface Accounting extends BaseContract {
       FeeRecordedEvent.OutputObject
     >;
 
-    "GainSplit(uint256,uint256,uint256,uint256,uint256)": TypedContractEvent<
+    "GainSplit(uint256,uint256,uint256,uint256)": TypedContractEvent<
       GainSplitEvent.InputTuple,
       GainSplitEvent.OutputTuple,
       GainSplitEvent.OutputObject
@@ -707,7 +668,7 @@ export interface Accounting extends BaseContract {
       GainSplitEvent.OutputObject
     >;
 
-    "LossApplied(uint256,uint256,uint256,uint256,uint256)": TypedContractEvent<
+    "LossApplied(uint256,uint256,uint256,uint256)": TypedContractEvent<
       LossAppliedEvent.InputTuple,
       LossAppliedEvent.OutputTuple,
       LossAppliedEvent.OutputObject

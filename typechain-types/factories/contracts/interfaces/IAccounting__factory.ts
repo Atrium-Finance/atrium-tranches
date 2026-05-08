@@ -33,11 +33,6 @@ const _abi = [
       },
       {
         internalType: "uint256",
-        name: "mz",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
         name: "jr",
         type: "uint256",
       },
@@ -61,19 +56,6 @@ const _abi = [
   {
     inputs: [],
     name: "getJuniorTVL",
-    outputs: [
-      {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "getMezzAPY",
     outputs: [
       {
         internalType: "uint256",

@@ -44,12 +44,11 @@ export class PrimeVaultsSDK {
 
   /**
    * Get tranche info by ID: trancheId, totalAssets, totalSupply, sharePrice, asset, apy.
-   * Works for SENIOR, MEZZ, and JUNIOR — all tranches are base-asset only.
+   * Works for SENIOR and JUNIOR — both tranches are base-asset only.
    */
   async getTrancheById(trancheId: TrancheId): Promise<TrancheInfo> {
     const vaultAddr = this._getVaultAddress(trancheId);
-    const apyFn =
-      trancheId === TrancheId.SENIOR ? "getSeniorAPY" : trancheId === TrancheId.MEZZ ? "getMezzAPY" : "getJuniorAPY";
+    const apyFn = trancheId === TrancheId.SENIOR ? "getSeniorAPY" : "getJuniorAPY";
 
     const results = await this.publicClient.multicall({
       contracts: [
@@ -219,11 +218,9 @@ export class PrimeVaultsSDK {
       seniorTVL: h.seniorTVL,
       seniorPrincipal: h.seniorPrincipal,
       seniorYield: h.seniorYield,
-      mezzTVL: h.mezzTVL,
       juniorTVL: h.juniorTVL,
       totalTVL: h.totalTVL,
       coverageSenior: h.coverageSenior,
-      coverageMezz: h.coverageMezz,
       minCoverageForDeposit: h.minCoverageForDeposit,
       shortfallPaused: h.shortfallPaused,
       juniorShortfallPausePrice: h.juniorShortfallPausePrice,
@@ -311,9 +308,9 @@ export class PrimeVaultsSDK {
   //  READ — Portfolio
   // ═══════════════════════════════════════════════════════════════════
 
-  /** Get aggregated user portfolio across all 3 tranches. */
+  /** Get aggregated user portfolio across both tranches. */
   async getUserPortfolio(user: string): Promise<UserPortfolio> {
-    const vaults = [this.addresses.seniorVault, this.addresses.mezzVault, this.addresses.juniorVault];
+    const vaults = [this.addresses.seniorVault, this.addresses.juniorVault];
 
     // 1. Get share balances
     const balResults = await this.publicClient.multicall({
@@ -341,9 +338,8 @@ export class PrimeVaultsSDK {
 
     return {
       senior: { shares: shares[0], assets: assets[0] },
-      mezz: { shares: shares[1], assets: assets[1] },
-      junior: { shares: shares[2], assets: assets[2] },
-      totalAssetsUSD: assets[0] + assets[1] + assets[2],
+      junior: { shares: shares[1], assets: assets[1] },
+      totalAssetsUSD: assets[0] + assets[1],
     };
   }
 
@@ -353,7 +349,6 @@ export class PrimeVaultsSDK {
 
   private _getVaultAddress(trancheId: TrancheId): string {
     if (trancheId === TrancheId.SENIOR) return this.addresses.seniorVault;
-    if (trancheId === TrancheId.MEZZ) return this.addresses.mezzVault;
     return this.addresses.juniorVault;
   }
 }

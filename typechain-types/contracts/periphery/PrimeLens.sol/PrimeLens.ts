@@ -91,11 +91,9 @@ export declare namespace PrimeLens {
     seniorTVL: BigNumberish;
     seniorPrincipal: BigNumberish;
     seniorYield: BigNumberish;
-    mezzTVL: BigNumberish;
     juniorTVL: BigNumberish;
     totalTVL: BigNumberish;
     coverageSenior: BigNumberish;
-    coverageMezz: BigNumberish;
     minCoverageForDeposit: BigNumberish;
     shortfallPaused: boolean;
     juniorShortfallPausePrice: BigNumberish;
@@ -106,11 +104,9 @@ export declare namespace PrimeLens {
     seniorTVL: bigint,
     seniorPrincipal: bigint,
     seniorYield: bigint,
-    mezzTVL: bigint,
     juniorTVL: bigint,
     totalTVL: bigint,
     coverageSenior: bigint,
-    coverageMezz: bigint,
     minCoverageForDeposit: bigint,
     shortfallPaused: boolean,
     juniorShortfallPausePrice: bigint,
@@ -119,11 +115,9 @@ export declare namespace PrimeLens {
     seniorTVL: bigint;
     seniorPrincipal: bigint;
     seniorYield: bigint;
-    mezzTVL: bigint;
     juniorTVL: bigint;
     totalTVL: bigint;
     coverageSenior: bigint;
-    coverageMezz: bigint;
     minCoverageForDeposit: bigint;
     shortfallPaused: boolean;
     juniorShortfallPausePrice: bigint;
@@ -135,21 +129,18 @@ export declare namespace PrimeLens {
     feeBps: BigNumberish;
     cooldownDuration: BigNumberish;
     coverageSenior: BigNumberish;
-    coverageMezz: BigNumberish;
   };
 
   export type WithdrawConditionStructOutput = [
     mechanism: bigint,
     feeBps: bigint,
     cooldownDuration: bigint,
-    coverageSenior: bigint,
-    coverageMezz: bigint
+    coverageSenior: bigint
   ] & {
     mechanism: bigint;
     feeBps: bigint;
     cooldownDuration: bigint;
     coverageSenior: bigint;
-    coverageMezz: bigint;
   };
 }
 
@@ -165,7 +156,6 @@ export interface PrimeLensInterface extends Interface {
       | "i_cdo"
       | "i_erc20Cooldown"
       | "i_juniorVault"
-      | "i_mezzVault"
       | "i_redemptionPolicy"
       | "i_seniorVault"
       | "i_sharesCooldown"
@@ -204,10 +194,6 @@ export interface PrimeLensInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "i_juniorVault",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "i_mezzVault",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -262,10 +248,6 @@ export interface PrimeLensInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "i_juniorVault",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "i_mezzVault",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -333,13 +315,8 @@ export interface PrimeLens extends BaseContract {
   getAllTranches: TypedContractMethod<
     [],
     [
-      [
-        PrimeLens.TrancheInfoStructOutput,
-        PrimeLens.TrancheInfoStructOutput,
-        PrimeLens.TrancheInfoStructOutput
-      ] & {
+      [PrimeLens.TrancheInfoStructOutput, PrimeLens.TrancheInfoStructOutput] & {
         senior: PrimeLens.TrancheInfoStructOutput;
-        mezz: PrimeLens.TrancheInfoStructOutput;
         junior: PrimeLens.TrancheInfoStructOutput;
       }
     ],
@@ -378,8 +355,6 @@ export interface PrimeLens extends BaseContract {
 
   i_juniorVault: TypedContractMethod<[], [string], "view">;
 
-  i_mezzVault: TypedContractMethod<[], [string], "view">;
-
   i_redemptionPolicy: TypedContractMethod<[], [string], "view">;
 
   i_seniorVault: TypedContractMethod<[], [string], "view">;
@@ -403,13 +378,8 @@ export interface PrimeLens extends BaseContract {
   ): TypedContractMethod<
     [],
     [
-      [
-        PrimeLens.TrancheInfoStructOutput,
-        PrimeLens.TrancheInfoStructOutput,
-        PrimeLens.TrancheInfoStructOutput
-      ] & {
+      [PrimeLens.TrancheInfoStructOutput, PrimeLens.TrancheInfoStructOutput] & {
         senior: PrimeLens.TrancheInfoStructOutput;
-        mezz: PrimeLens.TrancheInfoStructOutput;
         junior: PrimeLens.TrancheInfoStructOutput;
       }
     ],
@@ -450,9 +420,6 @@ export interface PrimeLens extends BaseContract {
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "i_juniorVault"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
-    nameOrSignature: "i_mezzVault"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "i_redemptionPolicy"

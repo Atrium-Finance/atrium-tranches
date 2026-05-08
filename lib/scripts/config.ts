@@ -66,13 +66,12 @@ export function hasFlag(args: string[], flag: string): boolean {
 
 const TRANCHE_NAME_MAP: Record<string, TrancheId> = {
   SENIOR: TrancheId.SENIOR,
-  MEZZ: TrancheId.MEZZ,
   JUNIOR: TrancheId.JUNIOR,
 };
 
 export function parseTranche(str: string): TrancheId {
   const result = TRANCHE_NAME_MAP[str.toUpperCase()];
-  if (result === undefined) throw new Error(`Invalid tranche: ${str}. Use SENIOR, MEZZ, or JUNIOR`);
+  if (result === undefined) throw new Error(`Invalid tranche: ${str}. Use SENIOR or JUNIOR`);
   return result;
 }
 
@@ -84,7 +83,6 @@ export function parseTranche(str: string): TrancheId {
                                                                                        
   # Deposit (any tranche)
   npx tsx lib/scripts/deposit-flow.ts --tranche SENIOR --amount 0.1
-  npx tsx lib/scripts/deposit-flow.ts --tranche MEZZ --amount 0.1 --dry-run
   npx tsx lib/scripts/deposit-flow.ts --tranche JUNIOR --amount 0.1
 
   # Withdraw
@@ -93,7 +91,7 @@ export function parseTranche(str: string): TrancheId {
                                                                                        
   # Claim (sau cooldown)                                                               
   npx tsx lib/scripts/withdraw-flow.ts --claim --cooldown-id 1 --tranche SENIOR        
-  npx tsx lib/scripts/withdraw-flow.ts --claim-shares --cooldown-id 1 --tranche MEZZ   
+  npx tsx lib/scripts/withdraw-flow.ts --claim-shares --cooldown-id 1 --tranche JUNIOR
            
   ⏺ # ERC20Cooldown (ASSETS_LOCK) — default 3 days
   npx tsx lib/scripts/set-cooldown.ts --handler erc20 --duration 3d                    

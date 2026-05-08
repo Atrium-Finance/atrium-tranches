@@ -67,18 +67,16 @@ export interface RedemptionPolicyInterface extends Interface {
       | "acceptOwnership"
       | "evaluate"
       | "evaluateForCoverage"
-      | "getCoverages"
+      | "getCoverage"
       | "owner"
       | "pendingOwner"
       | "renounceOwnership"
       | "s_accounting"
       | "s_juniorParams"
       | "s_mechanismConfig"
-      | "s_mezzParams"
       | "setAccounting"
       | "setJuniorParams"
       | "setMechanismConfig"
-      | "setMezzParams"
       | "transferOwnership"
   ): FunctionFragment;
 
@@ -87,7 +85,6 @@ export interface RedemptionPolicyInterface extends Interface {
       | "AccountingSet"
       | "JuniorParamsUpdated"
       | "MechanismConfigUpdated"
-      | "MezzParamsUpdated"
       | "OwnershipTransferStarted"
       | "OwnershipTransferred"
   ): EventFragment;
@@ -107,10 +104,10 @@ export interface RedemptionPolicyInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "evaluateForCoverage",
-    values: [BigNumberish, BigNumberish, BigNumberish]
+    values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "getCoverages",
+    functionFragment: "getCoverage",
     values?: undefined
   ): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
@@ -135,24 +132,16 @@ export interface RedemptionPolicyInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "s_mezzParams",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "setAccounting",
     values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "setJuniorParams",
-    values: [BigNumberish, BigNumberish, BigNumberish, BigNumberish]
+    values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "setMechanismConfig",
     values: [BigNumberish, RedemptionPolicy.MechanismConfigStruct]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "setMezzParams",
-    values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "transferOwnership",
@@ -174,7 +163,7 @@ export interface RedemptionPolicyInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "getCoverages",
+    functionFragment: "getCoverage",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
@@ -199,10 +188,6 @@ export interface RedemptionPolicyInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "s_mezzParams",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "setAccounting",
     data: BytesLike
   ): Result;
@@ -212,10 +197,6 @@ export interface RedemptionPolicyInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "setMechanismConfig",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "setMezzParams",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -237,23 +218,11 @@ export namespace AccountingSetEvent {
 }
 
 export namespace JuniorParamsUpdatedEvent {
-  export type InputTuple = [
-    instantCs: BigNumberish,
-    instantCm: BigNumberish,
-    assetLockCs: BigNumberish,
-    assetLockCm: BigNumberish
-  ];
-  export type OutputTuple = [
-    instantCs: bigint,
-    instantCm: bigint,
-    assetLockCs: bigint,
-    assetLockCm: bigint
-  ];
+  export type InputTuple = [instantCs: BigNumberish, assetLockCs: BigNumberish];
+  export type OutputTuple = [instantCs: bigint, assetLockCs: bigint];
   export interface OutputObject {
     instantCs: bigint;
-    instantCm: bigint;
     assetLockCs: bigint;
-    assetLockCm: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -266,19 +235,6 @@ export namespace MechanismConfigUpdatedEvent {
   export type OutputTuple = [tranche: bigint];
   export interface OutputObject {
     tranche: bigint;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
-export namespace MezzParamsUpdatedEvent {
-  export type InputTuple = [instantCs: BigNumberish, assetLockCs: BigNumberish];
-  export type OutputTuple = [instantCs: bigint, assetLockCs: bigint];
-  export interface OutputObject {
-    instantCs: bigint;
-    assetLockCs: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -368,16 +324,12 @@ export interface RedemptionPolicy extends BaseContract {
   >;
 
   evaluateForCoverage: TypedContractMethod<
-    [tranche: BigNumberish, cs: BigNumberish, cm: BigNumberish],
+    [tranche: BigNumberish, cs: BigNumberish],
     [RedemptionPolicy.PolicyResultStructOutput],
     "view"
   >;
 
-  getCoverages: TypedContractMethod<
-    [],
-    [[bigint, bigint] & { cs: bigint; cm: bigint }],
-    "view"
-  >;
+  getCoverage: TypedContractMethod<[], [bigint], "view">;
 
   owner: TypedContractMethod<[], [string], "view">;
 
@@ -389,14 +341,7 @@ export interface RedemptionPolicy extends BaseContract {
 
   s_juniorParams: TypedContractMethod<
     [],
-    [
-      [bigint, bigint, bigint, bigint] & {
-        instantCs: bigint;
-        instantCm: bigint;
-        assetLockCs: bigint;
-        assetLockCm: bigint;
-      }
-    ],
+    [[bigint, bigint] & { instantCs: bigint; assetLockCs: bigint }],
     "view"
   >;
 
@@ -414,12 +359,6 @@ export interface RedemptionPolicy extends BaseContract {
     "view"
   >;
 
-  s_mezzParams: TypedContractMethod<
-    [],
-    [[bigint, bigint] & { instantCs: bigint; assetLockCs: bigint }],
-    "view"
-  >;
-
   setAccounting: TypedContractMethod<
     [accounting_: AddressLike],
     [void],
@@ -427,24 +366,13 @@ export interface RedemptionPolicy extends BaseContract {
   >;
 
   setJuniorParams: TypedContractMethod<
-    [
-      instantCs_: BigNumberish,
-      instantCm_: BigNumberish,
-      assetLockCs_: BigNumberish,
-      assetLockCm_: BigNumberish
-    ],
+    [instantCs_: BigNumberish, assetLockCs_: BigNumberish],
     [void],
     "nonpayable"
   >;
 
   setMechanismConfig: TypedContractMethod<
     [tranche: BigNumberish, config_: RedemptionPolicy.MechanismConfigStruct],
-    [void],
-    "nonpayable"
-  >;
-
-  setMezzParams: TypedContractMethod<
-    [instantCs_: BigNumberish, assetLockCs_: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -478,17 +406,13 @@ export interface RedemptionPolicy extends BaseContract {
   getFunction(
     nameOrSignature: "evaluateForCoverage"
   ): TypedContractMethod<
-    [tranche: BigNumberish, cs: BigNumberish, cm: BigNumberish],
+    [tranche: BigNumberish, cs: BigNumberish],
     [RedemptionPolicy.PolicyResultStructOutput],
     "view"
   >;
   getFunction(
-    nameOrSignature: "getCoverages"
-  ): TypedContractMethod<
-    [],
-    [[bigint, bigint] & { cs: bigint; cm: bigint }],
-    "view"
-  >;
+    nameOrSignature: "getCoverage"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "owner"
   ): TypedContractMethod<[], [string], "view">;
@@ -505,14 +429,7 @@ export interface RedemptionPolicy extends BaseContract {
     nameOrSignature: "s_juniorParams"
   ): TypedContractMethod<
     [],
-    [
-      [bigint, bigint, bigint, bigint] & {
-        instantCs: bigint;
-        instantCm: bigint;
-        assetLockCs: bigint;
-        assetLockCm: bigint;
-      }
-    ],
+    [[bigint, bigint] & { instantCs: bigint; assetLockCs: bigint }],
     "view"
   >;
   getFunction(
@@ -531,24 +448,12 @@ export interface RedemptionPolicy extends BaseContract {
     "view"
   >;
   getFunction(
-    nameOrSignature: "s_mezzParams"
-  ): TypedContractMethod<
-    [],
-    [[bigint, bigint] & { instantCs: bigint; assetLockCs: bigint }],
-    "view"
-  >;
-  getFunction(
     nameOrSignature: "setAccounting"
   ): TypedContractMethod<[accounting_: AddressLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setJuniorParams"
   ): TypedContractMethod<
-    [
-      instantCs_: BigNumberish,
-      instantCm_: BigNumberish,
-      assetLockCs_: BigNumberish,
-      assetLockCm_: BigNumberish
-    ],
+    [instantCs_: BigNumberish, assetLockCs_: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -556,13 +461,6 @@ export interface RedemptionPolicy extends BaseContract {
     nameOrSignature: "setMechanismConfig"
   ): TypedContractMethod<
     [tranche: BigNumberish, config_: RedemptionPolicy.MechanismConfigStruct],
-    [void],
-    "nonpayable"
-  >;
-  getFunction(
-    nameOrSignature: "setMezzParams"
-  ): TypedContractMethod<
-    [instantCs_: BigNumberish, assetLockCs_: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -592,13 +490,6 @@ export interface RedemptionPolicy extends BaseContract {
     MechanismConfigUpdatedEvent.OutputObject
   >;
   getEvent(
-    key: "MezzParamsUpdated"
-  ): TypedContractEvent<
-    MezzParamsUpdatedEvent.InputTuple,
-    MezzParamsUpdatedEvent.OutputTuple,
-    MezzParamsUpdatedEvent.OutputObject
-  >;
-  getEvent(
     key: "OwnershipTransferStarted"
   ): TypedContractEvent<
     OwnershipTransferStartedEvent.InputTuple,
@@ -625,7 +516,7 @@ export interface RedemptionPolicy extends BaseContract {
       AccountingSetEvent.OutputObject
     >;
 
-    "JuniorParamsUpdated(uint256,uint256,uint256,uint256)": TypedContractEvent<
+    "JuniorParamsUpdated(uint256,uint256)": TypedContractEvent<
       JuniorParamsUpdatedEvent.InputTuple,
       JuniorParamsUpdatedEvent.OutputTuple,
       JuniorParamsUpdatedEvent.OutputObject
@@ -645,17 +536,6 @@ export interface RedemptionPolicy extends BaseContract {
       MechanismConfigUpdatedEvent.InputTuple,
       MechanismConfigUpdatedEvent.OutputTuple,
       MechanismConfigUpdatedEvent.OutputObject
-    >;
-
-    "MezzParamsUpdated(uint256,uint256)": TypedContractEvent<
-      MezzParamsUpdatedEvent.InputTuple,
-      MezzParamsUpdatedEvent.OutputTuple,
-      MezzParamsUpdatedEvent.OutputObject
-    >;
-    MezzParamsUpdated: TypedContractEvent<
-      MezzParamsUpdatedEvent.InputTuple,
-      MezzParamsUpdatedEvent.OutputTuple,
-      MezzParamsUpdatedEvent.OutputObject
     >;
 
     "OwnershipTransferStarted(address,address)": TypedContractEvent<

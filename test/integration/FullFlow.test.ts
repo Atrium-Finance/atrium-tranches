@@ -23,8 +23,7 @@ const WETH = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
 const CHAINLINK_ETH_USD = "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612";
 
 const SENIOR = 0;
-const MEZZ = 1;
-const JUNIOR = 2;
+const JUNIOR = 1;
 const E18 = 10n ** 18n;
 const DAY = 86_400;
 
@@ -46,7 +45,6 @@ describeOrSkip("Integration — Full Flow (Arbitrum Fork)", function () {
   let aprProvider: any;
   let aprFeed: any;
   let seniorVault: any;
-  let mezzVault: any;
   let juniorVault: any;
 
   // External contracts (forked)
@@ -207,9 +205,6 @@ describeOrSkip("Integration — Full Flow (Arbitrum Fork)", function () {
     seniorVault = await VaultFactory.deploy(
       await cdo.getAddress(), SENIOR, USDAI, WETH, "PrimeVaults Senior", "pvSENIOR",
     );
-    mezzVault = await VaultFactory.deploy(
-      await cdo.getAddress(), MEZZ, USDAI, WETH, "PrimeVaults Mezzanine", "pvMEZZ",
-    );
     juniorVault = await VaultFactory.deploy(
       await cdo.getAddress(), JUNIOR, USDAI, WETH, "PrimeVaults Junior", "pvJUNIOR",
     );
@@ -224,7 +219,6 @@ describeOrSkip("Integration — Full Flow (Arbitrum Fork)", function () {
     // Wire up
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(deployer).registerTranche(SENIOR, await seniorVault.getAddress());
-    await cdo.connect(deployer).registerTranche(MEZZ, await mezzVault.getAddress());
     await cdo.connect(deployer).registerTranche(JUNIOR, await juniorVault.getAddress());
 
     // Authorize CDO in cooldown contracts
@@ -243,7 +237,6 @@ describeOrSkip("Integration — Full Flow (Arbitrum Fork)", function () {
 
     // Approvals
     await usdai.connect(userA).approve(await seniorVault.getAddress(), ethers.MaxUint256);
-    await usdai.connect(userB).approve(await mezzVault.getAddress(), ethers.MaxUint256);
     await usdai.connect(userC).approve(await juniorVault.getAddress(), ethers.MaxUint256);
     await weth.connect(userC).approve(await juniorVault.getAddress(), ethers.MaxUint256);
   });
@@ -263,14 +256,6 @@ describeOrSkip("Integration — Full Flow (Arbitrum Fork)", function () {
 
     expect(await seniorVault.balanceOf(userA.address)).to.be.gt(0n);
     expect(await accounting.s_seniorTVL()).to.equal(amount);
-  });
-
-  it("Step 3: User B deposits $5K Mezzanine", async () => {
-    const amount = 5_000n * E18;
-    await mezzVault.connect(userB).deposit(amount, userB.address);
-
-    expect(await mezzVault.balanceOf(userB.address)).to.be.gt(0n);
-    expect(await accounting.s_mezzTVL()).to.equal(amount);
   });
 
   it("Step 4: User C deposits $8K USDai + 0.67 WETH Junior", async () => {
@@ -306,9 +291,9 @@ describeOrSkip("Integration — Full Flow (Arbitrum Fork)", function () {
     // sUSDai is yield-bearing — share price increases over time.
     // After 7 days, strategy.totalAssets() should be slightly > deposits.
     const strategyAssets = await strategy.totalAssets();
-    // Senior deposited 10K, Mezz 5K, Junior base 8K = 23K into strategy via sUSDai
-    // After 7 days of yield, should be at least 23K
-    expect(strategyAssets).to.be.gte(23_000n * E18 - E18); // minus 1 for rounding
+    // Senior deposited 10K, Junior base 8K = 18K into strategy via sUSDai
+    // After 7 days of yield, should be at least 18K
+    expect(strategyAssets).to.be.gte(18_000n * E18 - E18); // minus 1 for rounding
 
     // Senior share price should be 1:1 or slightly above
     const seniorSharePrice = await seniorVault.convertToAssets(E18);
@@ -408,17 +393,13 @@ describeOrSkip("Integration — Full Flow (Arbitrum Fork)", function () {
   it("Step 15: Verify TVLs balance correctly", async () => {
     // All TVLs should be non-negative and consistent
     const srTVL = await accounting.s_seniorTVL();
-    const mzTVL = await accounting.s_mezzTVL();
     const jrBaseTVL = await accounting.s_juniorBaseTVL();
-    const jrWethTVL = await accounting.s_juniorWethTVL();
 
     expect(srTVL).to.be.gte(0n);
-    expect(mzTVL).to.be.gte(0n);
     expect(jrBaseTVL).to.be.gte(0n);
-    expect(jrWethTVL).to.be.gte(0n);
 
     // Total TVL should be positive (deposits minus partial withdrawals)
-    const totalTVL = srTVL + mzTVL + jrBaseTVL + jrWethTVL;
+    const totalTVL = srTVL + jrBaseTVL;
     expect(totalTVL).to.be.gt(0n);
 
     // Strategy should still hold assets
@@ -430,9 +411,7 @@ describeOrSkip("Integration — Full Flow (Arbitrum Fork)", function () {
     expect(seniorPrice).to.be.gt(0n);
 
     console.log(`    Senior TVL:      ${ethers.formatEther(srTVL)} USDai`);
-    console.log(`    Mezz TVL:        ${ethers.formatEther(mzTVL)} USDai`);
     console.log(`    Junior Base TVL: ${ethers.formatEther(jrBaseTVL)} USDai`);
-    console.log(`    Junior WETH TVL: ${ethers.formatEther(jrWethTVL)} USD`);
     console.log(`    Total TVL:       ${ethers.formatEther(totalTVL)} USD`);
     console.log(`    Strategy Assets: ${ethers.formatEther(strategyAssets)} USDai`);
     console.log(`    Senior Price:    ${ethers.formatEther(seniorPrice)} USDai/share`);

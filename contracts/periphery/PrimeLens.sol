@@ -67,7 +67,6 @@ contract PrimeLens {
     ICooldownHandler public immutable i_erc20Cooldown;
     ICooldownHandler public immutable i_sharesCooldown;
     address public immutable i_seniorVault;
-    address public immutable i_mezzVault;
     address public immutable i_juniorVault;
 
     // ═══════════════════════════════════════════════════════════════════
@@ -89,11 +88,9 @@ contract PrimeLens {
         uint256 seniorTVL;
         uint256 seniorPrincipal; // tracked sum of net Senior deposits (no accrued yield)
         uint256 seniorYield; // seniorTVL - seniorPrincipal (loss waterfall absorbs this before principal)
-        uint256 mezzTVL;
         uint256 juniorTVL;
         uint256 totalTVL;
-        uint256 coverageSenior; // cs = (Sr+Mz+Jr)/Sr
-        uint256 coverageMezz; // cm = (Mz+Jr)/Mz
+        uint256 coverageSenior; // cs = (Sr+Jr)/Sr
         uint256 minCoverageForDeposit;
         bool shortfallPaused;
         uint256 juniorShortfallPausePrice;
@@ -117,7 +114,6 @@ contract PrimeLens {
         uint256 feeBps;
         uint256 cooldownDuration;
         uint256 coverageSenior;
-        uint256 coverageMezz;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -127,7 +123,6 @@ contract PrimeLens {
     constructor(
         address cdo_,
         address seniorVault_,
-        address mezzVault_,
         address juniorVault_
     ) {
         i_cdo = IPrimeCDOLens(cdo_);
@@ -137,7 +132,6 @@ contract PrimeLens {
         i_erc20Cooldown = IPrimeCDOLens(cdo_).i_erc20Cooldown();
         i_sharesCooldown = IPrimeCDOLens(cdo_).i_sharesCooldown();
         i_seniorVault = seniorVault_;
-        i_mezzVault = mezzVault_;
         i_juniorVault = juniorVault_;
     }
 
@@ -160,18 +154,16 @@ contract PrimeLens {
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * @notice Get info for all three tranches in one call.
+     * @notice Get info for both tranches in one call.
      * @return senior Senior tranche info
-     * @return mezz Mezzanine tranche info
      * @return junior Junior tranche info
      */
     function getAllTranches()
         external
         view
-        returns (TrancheInfo memory senior, TrancheInfo memory mezz, TrancheInfo memory junior)
+        returns (TrancheInfo memory senior, TrancheInfo memory junior)
     {
         senior = _buildTrancheInfo(TrancheId.SENIOR, i_seniorVault);
-        mezz = _buildTrancheInfo(TrancheId.MEZZ, i_mezzVault);
         junior = _buildTrancheInfo(TrancheId.JUNIOR, i_juniorVault);
     }
 
@@ -184,19 +176,16 @@ contract PrimeLens {
      * @return health Struct with TVLs, coverage ratios, pause state
      */
     function getProtocolHealth() external view returns (ProtocolHealth memory health) {
-        (uint256 sr, uint256 mz, uint256 jr) = i_accounting.getAllTVLs();
+        (uint256 sr, uint256 jr) = i_accounting.getAllTVLs();
         health.seniorTVL = sr;
         uint256 srPrincipal = i_accounting.getSeniorPrincipal();
         health.seniorPrincipal = srPrincipal;
         health.seniorYield = sr > srPrincipal ? sr - srPrincipal : 0;
-        health.mezzTVL = mz;
         health.juniorTVL = jr;
-        health.totalTVL = sr + mz + jr;
+        health.totalTVL = sr + jr;
 
-        // cs = (Sr+Mz+Jr)/Sr — type(uint256).max if Sr == 0
-        health.coverageSenior = sr > 0 ? ((sr + mz + jr) * PRECISION) / sr : type(uint256).max;
-        // cm = (Mz+Jr)/Mz — type(uint256).max if Mz == 0
-        health.coverageMezz = mz > 0 ? ((mz + jr) * PRECISION) / mz : type(uint256).max;
+        // cs = (Sr+Jr)/Sr — type(uint256).max if Sr == 0
+        health.coverageSenior = sr > 0 ? ((sr + jr) * PRECISION) / sr : type(uint256).max;
 
         health.minCoverageForDeposit = i_cdo.s_minCoverageForDeposit();
         health.shortfallPaused = i_cdo.s_shortfallPaused();
@@ -243,9 +232,7 @@ contract PrimeLens {
         cond.feeBps = policy.feeBps;
         cond.cooldownDuration = policy.cooldownDuration;
 
-        (uint256 cs, uint256 cm) = i_redemptionPolicy.getCoverages();
-        cond.coverageSenior = cs;
-        cond.coverageMezz = cm;
+        cond.coverageSenior = i_redemptionPolicy.getCoverage();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -290,7 +277,6 @@ contract PrimeLens {
 
     function _getVault(TrancheId tranche) internal view returns (address) {
         if (tranche == TrancheId.SENIOR) return i_seniorVault;
-        if (tranche == TrancheId.MEZZ) return i_mezzVault;
         return i_juniorVault;
     }
 
@@ -310,7 +296,6 @@ contract PrimeLens {
 
     function _getAPY(TrancheId tranche) internal view returns (uint256) {
         if (tranche == TrancheId.SENIOR) return i_accounting.getSeniorAPY();
-        if (tranche == TrancheId.MEZZ) return i_accounting.getMezzAPY();
         return i_accounting.getJuniorAPY();
     }
 

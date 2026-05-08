@@ -2,10 +2,9 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
-// TrancheId enum mirrors IPrimeCDO.sol
+// TrancheId enum mirrors IPrimeCDO.sol — 2-tranche model
 const SENIOR = 0;
-const MEZZ = 1;
-const JUNIOR = 2;
+const JUNIOR = 1;
 
 describe("Accounting — Part 1 (Views + Record)", () => {
   let accounting: any;
@@ -57,7 +56,6 @@ describe("Accounting — Part 1 (Views + Record)", () => {
 
     it("should have all TVLs at zero initially", async () => {
       expect(await accounting.s_seniorTVL()).to.equal(0);
-      expect(await accounting.s_mezzTVL()).to.equal(0);
       expect(await accounting.s_juniorBaseTVL()).to.equal(0);
       expect(await accounting.s_reserveTVL()).to.equal(0);
     });
@@ -71,11 +69,6 @@ describe("Accounting — Part 1 (Views + Record)", () => {
     it("should increase Senior TVL", async () => {
       await accounting.connect(cdo).recordDeposit(SENIOR, 1000n * E18);
       expect(await accounting.s_seniorTVL()).to.equal(1000n * E18);
-    });
-
-    it("should increase Mezzanine TVL", async () => {
-      await accounting.connect(cdo).recordDeposit(MEZZ, 500n * E18);
-      expect(await accounting.s_mezzTVL()).to.equal(500n * E18);
     });
 
     it("should increase Junior base TVL", async () => {
@@ -103,18 +96,12 @@ describe("Accounting — Part 1 (Views + Record)", () => {
   describe("recordWithdraw", () => {
     beforeEach(async () => {
       await accounting.connect(cdo).recordDeposit(SENIOR, 1000n * E18);
-      await accounting.connect(cdo).recordDeposit(MEZZ, 500n * E18);
       await accounting.connect(cdo).recordDeposit(JUNIOR, 200n * E18);
     });
 
     it("should decrease Senior TVL", async () => {
       await accounting.connect(cdo).recordWithdraw(SENIOR, 300n * E18);
       expect(await accounting.s_seniorTVL()).to.equal(700n * E18);
-    });
-
-    it("should decrease Mezzanine TVL", async () => {
-      await accounting.connect(cdo).recordWithdraw(MEZZ, 100n * E18);
-      expect(await accounting.s_mezzTVL()).to.equal(400n * E18);
     });
 
     it("should decrease Junior base TVL", async () => {
@@ -150,10 +137,10 @@ describe("Accounting — Part 1 (Views + Record)", () => {
     });
 
     it("should emit FeeRecorded event", async () => {
-      await accounting.connect(cdo).recordDeposit(MEZZ, 500n * E18);
-      await expect(accounting.connect(cdo).recordFee(MEZZ, 5n * E18))
+      await accounting.connect(cdo).recordDeposit(JUNIOR, 500n * E18);
+      await expect(accounting.connect(cdo).recordFee(JUNIOR, 5n * E18))
         .to.emit(accounting, "FeeRecorded")
-        .withArgs(MEZZ, 5n * E18);
+        .withArgs(JUNIOR, 5n * E18);
     });
   });
 
@@ -164,16 +151,11 @@ describe("Accounting — Part 1 (Views + Record)", () => {
   describe("view functions", () => {
     beforeEach(async () => {
       await accounting.connect(cdo).recordDeposit(SENIOR, 7_000n * E18);
-      await accounting.connect(cdo).recordDeposit(MEZZ, 2_000n * E18);
       await accounting.connect(cdo).recordDeposit(JUNIOR, 800n * E18);
     });
 
     it("getTrancheTVL(SENIOR) should return senior TVL", async () => {
       expect(await accounting.getTrancheTVL(SENIOR)).to.equal(7_000n * E18);
-    });
-
-    it("getTrancheTVL(MEZZ) should return mezz TVL", async () => {
-      expect(await accounting.getTrancheTVL(MEZZ)).to.equal(2_000n * E18);
     });
 
     it("getTrancheTVL(JUNIOR) should return junior base TVL", async () => {
@@ -184,10 +166,9 @@ describe("Accounting — Part 1 (Views + Record)", () => {
       expect(await accounting.getJuniorTVL()).to.equal(800n * E18);
     });
 
-    it("getAllTVLs should return (sr, mz, jr)", async () => {
-      const [sr, mz, jr] = await accounting.getAllTVLs();
+    it("getAllTVLs should return (sr, jr)", async () => {
+      const [sr, jr] = await accounting.getAllTVLs();
       expect(sr).to.equal(7_000n * E18);
-      expect(mz).to.equal(2_000n * E18);
       expect(jr).to.equal(800n * E18);
     });
   });

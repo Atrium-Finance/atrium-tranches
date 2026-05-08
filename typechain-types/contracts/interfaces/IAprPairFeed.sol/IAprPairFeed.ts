@@ -23,7 +23,6 @@ import type {
 export declare namespace IAprPairFeed {
   export type TRoundStruct = {
     aprTargetSenior: BigNumberish;
-    aprTargetMezz: BigNumberish;
     aprBase: BigNumberish;
     updatedAt: BigNumberish;
     answeredInRound: BigNumberish;
@@ -31,13 +30,11 @@ export declare namespace IAprPairFeed {
 
   export type TRoundStructOutput = [
     aprTargetSenior: bigint,
-    aprTargetMezz: bigint,
     aprBase: bigint,
     updatedAt: bigint,
     answeredInRound: bigint
   ] & {
     aprTargetSenior: bigint;
-    aprTargetMezz: bigint;
     aprBase: bigint;
     updatedAt: bigint;
     answeredInRound: bigint;
@@ -50,7 +47,7 @@ export interface IAprPairFeedInterface extends Interface {
       | "getRoundData"
       | "latestRoundData"
       | "pushAprBase"
-      | "pushAprTarget"
+      | "pushSeniorAprTarget"
       | "updateRoundData"
   ): FunctionFragment;
 
@@ -67,8 +64,8 @@ export interface IAprPairFeedInterface extends Interface {
     values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "pushAprTarget",
-    values: [BigNumberish, BigNumberish, BigNumberish]
+    functionFragment: "pushSeniorAprTarget",
+    values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "updateRoundData",
@@ -88,7 +85,7 @@ export interface IAprPairFeedInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "pushAprTarget",
+    functionFragment: "pushSeniorAprTarget",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -158,8 +155,8 @@ export interface IAprPairFeed extends BaseContract {
     "nonpayable"
   >;
 
-  pushAprTarget: TypedContractMethod<
-    [tranche: BigNumberish, value: BigNumberish, timestamp: BigNumberish],
+  pushSeniorAprTarget: TypedContractMethod<
+    [value: BigNumberish, timestamp: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -188,9 +185,9 @@ export interface IAprPairFeed extends BaseContract {
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "pushAprTarget"
+    nameOrSignature: "pushSeniorAprTarget"
   ): TypedContractMethod<
-    [tranche: BigNumberish, value: BigNumberish, timestamp: BigNumberish],
+    [value: BigNumberish, timestamp: BigNumberish],
     [void],
     "nonpayable"
   >;

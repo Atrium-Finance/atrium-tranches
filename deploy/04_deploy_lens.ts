@@ -21,9 +21,7 @@ async function main() {
   console.log(`  Network:  ${hre.network.name}\n`);
 
   const LensFactory = await hre.ethers.getContractFactory("PrimeLens");
-  const primeLens = await LensFactory.deploy(
-    d.primeCDO, d.seniorVault, d.mezzVault, d.juniorVault,
-  );
+  const primeLens = await LensFactory.deploy(d.primeCDO, d.seniorVault, d.juniorVault);
   await primeLens.waitForDeployment();
   const primeLensAddr = await primeLens.getAddress();
   console.log(`  PrimeLens:         ${primeLensAddr}`);

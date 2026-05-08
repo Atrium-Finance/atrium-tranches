@@ -58,7 +58,6 @@ export interface DeployedAddresses {
   redemptionPolicy: string;
   primeCDO: string;
   seniorVault: string;
-  mezzVault: string;
   juniorVault: string;
   // Periphery (04)
   primeLens: string;

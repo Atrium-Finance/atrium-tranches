@@ -3,8 +3,7 @@ import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 const SENIOR = 0;
-const MEZZ = 1;
-const JUNIOR = 2;
+const JUNIOR = 1;
 
 describe("Governance — Guardian role", () => {
   let cdo: any;
@@ -16,14 +15,13 @@ describe("Governance — Guardian role", () => {
   let owner: SignerWithAddress;
   let guardian: SignerWithAddress;
   let seniorVault: SignerWithAddress;
-  let mezzVault: SignerWithAddress;
   let juniorVault: SignerWithAddress;
   let other: SignerWithAddress;
 
   const E18 = 10n ** 18n;
 
   beforeEach(async () => {
-    [owner, guardian, seniorVault, mezzVault, juniorVault, other] = await ethers.getSigners();
+    [owner, guardian, seniorVault, juniorVault, other] = await ethers.getSigners();
 
     const BaseFactory = await ethers.getContractFactory("MockBaseAsset");
     mockUSDai = await BaseFactory.deploy("USDai", "USDai");
@@ -56,7 +54,6 @@ describe("Governance — Guardian role", () => {
 
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(owner).registerTranche(SENIOR, seniorVault.address);
-    await cdo.connect(owner).registerTranche(MEZZ, mezzVault.address);
     await cdo.connect(owner).registerTranche(JUNIOR, juniorVault.address);
   });
 

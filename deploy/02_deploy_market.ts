@@ -2,7 +2,7 @@
  * Deploy Step 02 — sUSDai Market contracts
  *
  * Deploys: SUSDaiAprPairProvider, AprPairFeed, Accounting, RedemptionPolicy,
- *          SUSDaiStrategy, PrimeCDO, TrancheVault × 3
+ *          SUSDaiStrategy, PrimeCDO, TrancheVault × 2
  *
  * Requires: deploy/01_deploy_shared.ts has been run (reads deployed.json).
  *
@@ -110,7 +110,7 @@ async function main() {
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  //  8. TrancheVault × 3
+  //  8. TrancheVault × 2
   // ═══════════════════════════════════════════════════════════════════
 
   const VaultFactory = await hre.ethers.getContractFactory("TrancheVault");
@@ -120,12 +120,7 @@ async function main() {
   const seniorVaultAddr = await seniorVault.getAddress();
   console.log(`  SeniorVault:       ${seniorVaultAddr}`);
 
-  const mezzVault = await VaultFactory.deploy(primeCDOAddr, 1, ARBITRUM.USDAI, "Prime Mezzanine sUSDai", "mzUSDai");
-  await mezzVault.waitForDeployment();
-  const mezzVaultAddr = await mezzVault.getAddress();
-  console.log(`  MezzVault:         ${mezzVaultAddr}`);
-
-  const juniorVault = await VaultFactory.deploy(primeCDOAddr, 2, ARBITRUM.USDAI, "Prime Junior sUSDai", "jrUSDai");
+  const juniorVault = await VaultFactory.deploy(primeCDOAddr, 1, ARBITRUM.USDAI, "Prime Junior sUSDai", "jrUSDai");
   await juniorVault.waitForDeployment();
   const juniorVaultAddr = await juniorVault.getAddress();
   console.log(`  JuniorVault:       ${juniorVaultAddr}`);
@@ -142,7 +137,6 @@ async function main() {
     redemptionPolicy: redemptionPolicyAddr,
     primeCDO: primeCDOAddr,
     seniorVault: seniorVaultAddr,
-    mezzVault: mezzVaultAddr,
     juniorVault: juniorVaultAddr,
   });
 

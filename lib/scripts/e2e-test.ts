@@ -4,16 +4,15 @@
  * Pre-requisites:
  *   1. Deploy stack (TEST_MODE=1 npx hardhat run deploy/03_configure.ts)
  *      → ASSETS_LOCK = 3 minutes, SHARES_LOCK = 5 minutes
- *   2. Wallet has at least DEPOSIT_AMOUNT * 4 USD.AI for testing all 3 tranches
+ *   2. Wallet has at least DEPOSIT_AMOUNT * 8 USD.AI for testing both tranches
  *
  * Test sequence:
  *   1. Show protocol health + tranche state
  *   2. Junior deposit (no coverage gate)
  *   3. Senior deposit (requires coverage)
- *   4. Mezz deposit (requires coverage)
- *   5. Withdraw test for each tranche → discover mechanism, claim after cooldown
- *   6. sUSDai deposit (output token) into Junior → verify preview matches actual
- *   7. Final dashboard
+ *   4. Withdraw test for each tranche → discover mechanism, claim after cooldown
+ *   5. sUSDai deposit (output token) into Junior → verify preview matches actual
+ *   6. Final dashboard
  *
  * Usage:
  *   ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/e2e-test.ts
@@ -33,8 +32,7 @@ const MECHANISM_NAMES: Record<number, string> = {
 
 const TRANCHE_LABEL: Record<number, string> = {
   0: "SENIOR",
-  1: "MEZZ",
-  2: "JUNIOR",
+  1: "JUNIOR",
 };
 
 function fmt(v: bigint, decimals = 18): string {
@@ -57,17 +55,15 @@ async function showHealth(sdk: any) {
   console.log(`\n  ─── Protocol health ───`);
   const h = await sdk.getProtocolHealth();
   console.log(`  Senior TVL:  ${fmt(h.seniorTVL)}`);
-  console.log(`  Mezz TVL:    ${fmt(h.mezzTVL)}`);
   console.log(`  Junior TVL:  ${fmt(h.juniorTVL)}`);
   console.log(`  Total TVL:   ${fmt(h.totalTVL)}`);
   console.log(`  Coverage Sr: ${h.coverageSenior > 10n ** 36n ? "∞" : fmtPct(h.coverageSenior)}`);
-  console.log(`  Coverage Mz: ${h.coverageMezz > 10n ** 36n ? "∞" : fmtPct(h.coverageMezz)}`);
   console.log(`  Paused:      ${h.shortfallPaused}`);
 }
 
 async function showTranches(sdk: any) {
   console.log(`\n  ─── Tranches ───`);
-  for (const id of [TrancheId.SENIOR, TrancheId.MEZZ, TrancheId.JUNIOR]) {
+  for (const id of [TrancheId.SENIOR, TrancheId.JUNIOR]) {
     const t = await sdk.getTrancheById(id);
     console.log(
       `  ${TRANCHE_LABEL[id]}: assets=${fmt(t.totalAssets)} | supply=${fmt(t.totalSupply)} | price=${fmt(t.sharePrice)} | APY=${fmtPct(t.apy)}`,
@@ -279,7 +275,7 @@ async function withdrawAndClaim(
     console.log(`    req.unlockTime: ${req.unlockTime}`);
     console.log(`    shortfallPaused: ${paused}`);
     console.log(`    strategy TVL:   ${fmt(stratTVL as bigint)}`);
-    console.log(`    accounting:     Sr=${fmt(health.seniorTVL)} Mz=${fmt(health.mezzTVL)} Jr=${fmt(health.juniorTVL)}`);
+    console.log(`    accounting:     Sr=${fmt(health.seniorTVL)} Jr=${fmt(health.juniorTVL)}`);
 
     console.log(`  Claiming SHARES_LOCK (${wr.cooldownId})...`);
     const cHash = await walletClient.writeContract({
@@ -320,7 +316,7 @@ async function runScenario(
   account: any,
   addresses: any,
   label: string,
-  deposits: { senior: bigint; mezz: bigint; junior: bigint },
+  deposits: { senior: bigint; junior: bigint },
   testTranche: TrancheId,
   expectedMechanism: CooldownType,
 ) {
@@ -336,39 +332,27 @@ async function runScenario(
   const srShares = deposits.senior > 0n
     ? await depositTranche(sdk, walletClient, publicClient, account, addresses.seniorVault, TrancheId.SENIOR, deposits.senior)
     : 0n;
-  const mzShares = deposits.mezz > 0n
-    ? await depositTranche(sdk, walletClient, publicClient, account, addresses.mezzVault, TrancheId.MEZZ, deposits.mezz)
-    : 0n;
 
   await showHealth(sdk);
 
   // Withdraw target tranche FIRST → assert mechanism
-  const targetShares = testTranche === TrancheId.SENIOR ? srShares : testTranche === TrancheId.MEZZ ? mzShares : jrShares;
-  const targetVault =
-    testTranche === TrancheId.SENIOR ? addresses.seniorVault
-    : testTranche === TrancheId.MEZZ ? addresses.mezzVault
-    : addresses.juniorVault;
+  const targetShares = testTranche === TrancheId.SENIOR ? srShares : jrShares;
+  const targetVault = testTranche === TrancheId.SENIOR ? addresses.seniorVault : addresses.juniorVault;
 
   console.log(`\n  >>> Asserting mechanism for ${TRANCHE_LABEL[testTranche]} = ${MECHANISM_NAMES[expectedMechanism]}`);
   const preview = await sdk.previewWithdraw(testTranche, targetShares);
   if (Number(preview.mechanism) !== expectedMechanism) {
     throw new Error(
-      `❌ Expected mechanism=${MECHANISM_NAMES[expectedMechanism]} but got ${MECHANISM_NAMES[preview.mechanism]} (cs/cm not in target range)`,
+      `❌ Expected mechanism=${MECHANISM_NAMES[expectedMechanism]} but got ${MECHANISM_NAMES[preview.mechanism]} (cs not in target range)`,
     );
   }
   console.log(`  ✓ Mechanism matches expected`);
 
   await withdrawAndClaim(sdk, walletClient, publicClient, account, targetVault, testTranche, targetShares);
 
-  // Drain remaining tranches (use NONE — coverage should be back to high after target withdraw)
+  // Drain remaining tranche (use NONE — coverage should be back to high after target withdraw)
   if (testTranche !== TrancheId.SENIOR && srShares > 0n) {
     await withdrawAndClaim(sdk, walletClient, publicClient, account, addresses.seniorVault, TrancheId.SENIOR, srShares);
-  }
-  if (testTranche !== TrancheId.MEZZ && mzShares > 0n) {
-    const mzNow = await sdk.getShareBalance(TrancheId.MEZZ, account.address);
-    if (mzNow > 0n) {
-      await withdrawAndClaim(sdk, walletClient, publicClient, account, addresses.mezzVault, TrancheId.MEZZ, mzNow);
-    }
   }
   if (testTranche !== TrancheId.JUNIOR && jrShares > 0n) {
     const jrNow = await sdk.getShareBalance(TrancheId.JUNIOR, account.address);
@@ -393,13 +377,13 @@ async function main() {
   console.log(`  User:        ${user}`);
   console.log(`  Base unit:   ${baseStr} USD.AI\n`);
   console.log(`  Scenarios:`);
-  console.log(`    A) NONE        — deposit Sr=1×, Mz=1×, Jr=1× (cs=300%, cm=200%)`);
-  console.log(`    B) ASSETS_LOCK — deposit Sr=7×, Mz=1×, Jr=3× (cs=157%, cm=400%)`);
-  console.log(`    C) SHARES_LOCK — deposit Sr=8×, Mz=1×, Jr=1× (cs=125%, cm=200%)`);
+  console.log(`    A) NONE        — deposit Sr=1×, Jr=1× (cs=200%)`);
+  console.log(`    B) ASSETS_LOCK — deposit Sr=2×, Jr=1× (cs=150%)`);
+  console.log(`    C) SHARES_LOCK — deposit Sr=3×, Jr=1× (cs≈133%)`);
   console.log(`    D) sUSDai      — deposit sUSDai directly into Junior`);
 
-  // Check balance — need ~22× base for phases A-C + 1× for phase D sUSDai
-  const required = base * 26n;
+  // Check balance — phases A (2×) + B (3×) + C (4×) + D (1× sUSDai) ≈ 10×
+  const required = base * 12n;
   const balance = await sdk.getTokenBalance(USDAI, user);
   console.log(`  Balance:     ${fmt(balance)} USD.AI`);
   console.log(`  Required:    ~${fmt(required)} USD.AI\n`);
@@ -410,34 +394,34 @@ async function main() {
   await showHealth(sdk);
 
   // ─── Phase A: NONE ──────────────────────────────────────────────
-  // Equal deposits → high coverage → instant withdraw for all
+  // Sr=1×, Jr=1× → cs=200% > 160% → instant withdraw for Junior
   await runScenario(
     sdk, walletClient, publicClient, account, addresses,
     "A — NONE (instant withdraw)",
-    { senior: base, mezz: base, junior: base },
-    TrancheId.MEZZ,
+    { senior: base, junior: base },
+    TrancheId.JUNIOR,
     CooldownType.NONE,
   );
 
   // ─── Phase B: ASSETS_LOCK ──────────────────────────────────────
-  // Sr=7×, Mz=1×, Jr=3× → cs = 11/7 ≈ 157% (in 140-160 range)
-  // Mezz: cs in (140, 160] → ASSETS_LOCK ✓
+  // Sr=2×, Jr=1× → cs = 3/2 = 150% (in 140-160 range)
+  // Junior: cs in (140, 160] → ASSETS_LOCK ✓
   await runScenario(
     sdk, walletClient, publicClient, account, addresses,
-    "B — ASSETS_LOCK (Mezz, 3min cooldown)",
-    { senior: base * 7n, mezz: base, junior: base * 3n },
-    TrancheId.MEZZ,
+    "B — ASSETS_LOCK (Junior, 3min cooldown)",
+    { senior: base * 2n, junior: base },
+    TrancheId.JUNIOR,
     CooldownType.ASSETS_LOCK,
   );
 
   // ─── Phase C: SHARES_LOCK ──────────────────────────────────────
-  // Sr=8×, Mz=1×, Jr=1× → cs = 10/8 = 125% (≤ 140%)
-  // Mezz: cs ≤ 140% → SHARES_LOCK ✓
+  // Sr=3×, Jr=1× → cs = 4/3 ≈ 133% (≤ 140%)
+  // Junior: cs ≤ 140% → SHARES_LOCK ✓
   await runScenario(
     sdk, walletClient, publicClient, account, addresses,
-    "C — SHARES_LOCK (Mezz, 5min cooldown)",
-    { senior: base * 8n, mezz: base, junior: base },
-    TrancheId.MEZZ,
+    "C — SHARES_LOCK (Junior, 5min cooldown)",
+    { senior: base * 3n, junior: base },
+    TrancheId.JUNIOR,
     CooldownType.SHARES_LOCK,
   );
 

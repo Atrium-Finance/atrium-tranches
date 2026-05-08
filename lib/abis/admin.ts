@@ -151,13 +151,6 @@ export const ACCOUNTING_ADMIN_ABI = [
   },
   {
     inputs: [],
-    name: "s_mezzTVL",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
     name: "s_juniorBaseTVL",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
@@ -186,13 +179,6 @@ export const ACCOUNTING_ADMIN_ABI = [
   },
   {
     inputs: [],
-    name: "getMezzAPY",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
     name: "getJuniorAPY",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
@@ -215,7 +201,6 @@ export const APR_PAIR_FEED_ADMIN_ABI = [
       {
         components: [
           { name: "aprTargetSenior", type: "int64" },
-          { name: "aprTargetMezz", type: "int64" },
           { name: "aprBase", type: "int64" },
           { name: "updatedAt", type: "uint64" },
           { name: "answeredInRound", type: "uint64" },
@@ -260,7 +245,6 @@ export const APR_PAIR_FEED_ADMIN_ABI = [
     inputs: [
       { indexed: false, name: "roundId", type: "uint64" },
       { indexed: false, name: "aprTargetSenior", type: "int64" },
-      { indexed: false, name: "aprTargetMezz", type: "int64" },
       { indexed: false, name: "aprBase", type: "int64" },
       { indexed: false, name: "updatedAt", type: "uint64" },
     ],
@@ -270,12 +254,11 @@ export const APR_PAIR_FEED_ADMIN_ABI = [
   {
     anonymous: false,
     inputs: [
-      { indexed: true, name: "tranche", type: "uint8" },
       { indexed: false, name: "roundId", type: "uint64" },
       { indexed: false, name: "value", type: "int64" },
       { indexed: false, name: "updatedAt", type: "uint64" },
     ],
-    name: "AprTargetPushed",
+    name: "SeniorAprTargetPushed",
     type: "event",
   },
   {
@@ -295,17 +278,6 @@ export const RISK_PARAMS_ABI = [
   {
     inputs: [],
     name: "s_seniorPremium",
-    outputs: [
-      { name: "x", type: "uint256" },
-      { name: "y", type: "uint256" },
-      { name: "k", type: "uint256" },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "s_juniorPremium",
     outputs: [
       { name: "x", type: "uint256" },
       { name: "y", type: "uint256" },
@@ -340,23 +312,6 @@ export const RISK_PARAMS_ABI = [
     type: "function",
   },
   {
-    inputs: [
-      {
-        name: "curve",
-        type: "tuple",
-        components: [
-          { name: "x", type: "uint256" },
-          { name: "y", type: "uint256" },
-          { name: "k", type: "uint256" },
-        ],
-      },
-    ],
-    name: "setJuniorPremium",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
     inputs: [{ name: "reserveBps_", type: "uint256" }],
     name: "setReserveBps",
     outputs: [],
@@ -369,22 +324,10 @@ export const REDEMPTION_POLICY_ABI = [
   // READ
   {
     inputs: [],
-    name: "s_mezzParams",
-    outputs: [
-      { name: "instantCs", type: "uint256" },
-      { name: "assetLockCs", type: "uint256" },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
     name: "s_juniorParams",
     outputs: [
       { name: "instantCs", type: "uint256" },
-      { name: "instantCm", type: "uint256" },
       { name: "assetLockCs", type: "uint256" },
-      { name: "assetLockCm", type: "uint256" },
     ],
     stateMutability: "view",
     type: "function",
@@ -404,11 +347,8 @@ export const REDEMPTION_POLICY_ABI = [
   },
   {
     inputs: [],
-    name: "getCoverages",
-    outputs: [
-      { name: "cs", type: "uint256" },
-      { name: "cm", type: "uint256" },
-    ],
+    name: "getCoverage",
+    outputs: [{ name: "cs", type: "uint256" }],
     stateMutability: "view",
     type: "function",
   },
@@ -434,18 +374,6 @@ export const REDEMPTION_POLICY_ABI = [
     inputs: [
       { name: "instantCs_", type: "uint256" },
       { name: "assetLockCs_", type: "uint256" },
-    ],
-    name: "setMezzParams",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { name: "instantCs_", type: "uint256" },
-      { name: "instantCm_", type: "uint256" },
-      { name: "assetLockCs_", type: "uint256" },
-      { name: "assetLockCm_", type: "uint256" },
     ],
     name: "setJuniorParams",
     outputs: [],

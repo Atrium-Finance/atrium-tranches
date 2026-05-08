@@ -198,15 +198,11 @@ async function main() {
   const updatedAt = new Date(Number(round.updatedAt) * 1000);
   const staleMinutes = Math.floor((Date.now() - updatedAt.getTime()) / 60_000);
   console.log(
-    `  [cached]  aprTargetSr=${fmtApr12(BigInt(round.aprTargetSenior))}  aprTargetMz=${fmtApr12(BigInt(round.aprTargetMezz))}  aprBase=${fmtApr12(BigInt(round.aprBase))}  (round #${round.answeredInRound}, ${staleMinutes}m ago)`,
+    `  [cached]  aprTargetSr=${fmtApr12(BigInt(round.aprTargetSenior))}  aprBase=${fmtApr12(BigInt(round.aprBase))}  (round #${round.answeredInRound}, ${staleMinutes}m ago)`,
   );
   console.log(`  [live]    aprTarget=${fmtApr12(BigInt(liveApr[0]))}  aprBase=${fmtApr12(BigInt(liveApr[1]))}`);
-  if (
-    BigInt(round.aprTargetSenior) !== BigInt(liveApr[0]) ||
-    BigInt(round.aprTargetMezz) !== BigInt(liveApr[0]) ||
-    BigInt(round.aprBase) !== BigInt(liveApr[1])
-  ) {
-    console.log(`  ⚠ cache stale or per-tranche overrides active`);
+  if (BigInt(round.aprTargetSenior) !== BigInt(liveApr[0]) || BigInt(round.aprBase) !== BigInt(liveApr[1])) {
+    console.log(`  ⚠ cache stale or Senior override active`);
   }
   console.log(`  benchmarkTokens = [${benchmarkTokens.join(", ")}]`);
 
@@ -238,7 +234,7 @@ async function main() {
   console.log(`\n  Tranches`);
   console.log(`  ───────────────────────────────────`);
 
-  for (const id of [TrancheId.SENIOR, TrancheId.MEZZ, TrancheId.JUNIOR]) {
+  for (const id of [TrancheId.SENIOR, TrancheId.JUNIOR]) {
     const t = await sdk.getTrancheById(id);
     console.log(
       `  ${id}: ${t.symbol} | assets=${fmtUSD(t.totalAssets)} | supply=${formatUnits(t.totalSupply, 18)} | price=${formatUnits(t.sharePrice, 18)} | APY=${fmtPct(t.apy)}`,
@@ -251,7 +247,7 @@ async function main() {
 
   console.log(`\n  Withdraw Conditions`);
   console.log(`  ───────────────────────────────────`);
-  for (const id of [TrancheId.SENIOR, TrancheId.MEZZ, TrancheId.JUNIOR]) {
+  for (const id of [TrancheId.SENIOR, TrancheId.JUNIOR]) {
     const w = await sdk.previewWithdraw(id, 10n ** 18n);
     const mech = MECHANISM_NAMES[w.mechanism] ?? String(w.mechanism);
     const fee = `${Number(w.feeBps) / 100}%`;

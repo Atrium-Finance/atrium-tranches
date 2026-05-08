@@ -17,8 +17,8 @@ import { IAccounting } from "../interfaces/IAccounting.sol";
 
 /**
  * @title TrancheVault
- * @notice Generic ERC-4626 vault for a single tranche (Senior, Mezzanine, or Junior).
- * @dev Same bytecode deployed 3× per market. Junior mode detected via i_trancheId == JUNIOR.
+ * @notice Generic ERC-4626 vault for a single tranche (Senior or Junior).
+ * @dev Same bytecode deployed 2× per market. Junior mode detected via i_trancheId == JUNIOR.
  *      totalAssets() reads from Accounting (not token balance).
  *      Deposits route through PrimeCDO. Standard withdraw/redeem disabled — use requestWithdraw.
  *      See MATH_REFERENCE §A1-A3 for share price invariants.
@@ -58,7 +58,7 @@ contract TrancheVault is ERC4626 {
 
     /**
      * @param cdo_ Address of the paired PrimeCDO
-     * @param trancheId_ Tranche this vault represents (SENIOR, MEZZ, or JUNIOR)
+     * @param trancheId_ Tranche this vault represents (SENIOR or JUNIOR)
      * @param asset_ Base asset token (e.g., USDai)
      * @param name_ Vault share token name (e.g., "PrimeVaults Senior")
      * @param symbol_ Vault share token symbol (e.g., "pvSENIOR")

@@ -2,7 +2,6 @@ import { Chain } from "viem";
 
 export enum TrancheId {
   SENIOR,
-  MEZZ,
   JUNIOR,
 }
 
@@ -15,7 +14,6 @@ export interface PrimeVaultsConfig {
 export interface ContractAddresses {
   primeCDO: string;
   seniorVault: string;
-  mezzVault: string;
   juniorVault: string;
   primeLens: string;
   accounting: string;
@@ -67,11 +65,9 @@ export interface ProtocolHealth {
   seniorPrincipal: bigint;
   /** seniorTVL - seniorPrincipal — yield-tier absorbed before principal in the loss waterfall. */
   seniorYield: bigint;
-  mezzTVL: bigint;
   juniorTVL: bigint;
   totalTVL: bigint;
   coverageSenior: bigint;
-  coverageMezz: bigint;
   minCoverageForDeposit: bigint;
   shortfallPaused: boolean;
   juniorShortfallPausePrice: bigint;
@@ -95,7 +91,6 @@ export interface WithdrawCondition {
   feeBps: bigint;
   cooldownDuration: bigint;
   coverageSenior: bigint;
-  coverageMezz: bigint;
 }
 
 /** @notice Cooldown mechanism applied to a withdrawal (mirrors Solidity enum) */
@@ -143,7 +138,6 @@ export interface WithdrawRequestResult extends WriteResult {
 
 export interface UserPortfolio {
   senior: { shares: bigint; assets: bigint };
-  mezz: { shares: bigint; assets: bigint };
   junior: { shares: bigint; assets: bigint };
   totalAssetsUSD: bigint;
 }

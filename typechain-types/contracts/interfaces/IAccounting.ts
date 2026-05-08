@@ -27,7 +27,6 @@ export interface IAccountingInterface extends Interface {
       | "getAllTVLs"
       | "getJuniorAPY"
       | "getJuniorTVL"
-      | "getMezzAPY"
       | "getSeniorAPY"
       | "getSeniorPrincipal"
       | "getTrancheTVL"
@@ -51,10 +50,6 @@ export interface IAccountingInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "getJuniorTVL",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getMezzAPY",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -99,7 +94,6 @@ export interface IAccountingInterface extends Interface {
     functionFragment: "getJuniorTVL",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "getMezzAPY", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getSeniorAPY",
     data: BytesLike
@@ -171,15 +165,13 @@ export interface IAccounting extends BaseContract {
 
   getAllTVLs: TypedContractMethod<
     [],
-    [[bigint, bigint, bigint] & { sr: bigint; mz: bigint; jr: bigint }],
+    [[bigint, bigint] & { sr: bigint; jr: bigint }],
     "view"
   >;
 
   getJuniorAPY: TypedContractMethod<[], [bigint], "view">;
 
   getJuniorTVL: TypedContractMethod<[], [bigint], "view">;
-
-  getMezzAPY: TypedContractMethod<[], [bigint], "view">;
 
   getSeniorAPY: TypedContractMethod<[], [bigint], "view">;
 
@@ -222,7 +214,7 @@ export interface IAccounting extends BaseContract {
     nameOrSignature: "getAllTVLs"
   ): TypedContractMethod<
     [],
-    [[bigint, bigint, bigint] & { sr: bigint; mz: bigint; jr: bigint }],
+    [[bigint, bigint] & { sr: bigint; jr: bigint }],
     "view"
   >;
   getFunction(
@@ -230,9 +222,6 @@ export interface IAccounting extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getJuniorTVL"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "getMezzAPY"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getSeniorAPY"

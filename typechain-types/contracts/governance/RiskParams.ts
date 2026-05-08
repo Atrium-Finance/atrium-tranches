@@ -40,7 +40,6 @@ export declare namespace RiskParams {
 export interface RiskParamsInterface extends Interface {
   getFunction(
     nameOrSignature:
-      | "MAX_JUNIOR_XY"
       | "MAX_RESERVE_BPS"
       | "MAX_SENIOR_X"
       | "MAX_SENIOR_XY"
@@ -48,10 +47,8 @@ export interface RiskParamsInterface extends Interface {
       | "owner"
       | "pendingOwner"
       | "renounceOwnership"
-      | "s_juniorPremium"
       | "s_reserveBps"
       | "s_seniorPremium"
-      | "setJuniorPremium"
       | "setReserveBps"
       | "setSeniorPremium"
       | "transferOwnership"
@@ -59,17 +56,12 @@ export interface RiskParamsInterface extends Interface {
 
   getEvent(
     nameOrSignatureOrTopic:
-      | "JuniorPremiumUpdated"
       | "OwnershipTransferStarted"
       | "OwnershipTransferred"
       | "ReserveBpsUpdated"
       | "SeniorPremiumUpdated"
   ): EventFragment;
 
-  encodeFunctionData(
-    functionFragment: "MAX_JUNIOR_XY",
-    values?: undefined
-  ): string;
   encodeFunctionData(
     functionFragment: "MAX_RESERVE_BPS",
     values?: undefined
@@ -96,20 +88,12 @@ export interface RiskParamsInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "s_juniorPremium",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "s_reserveBps",
     values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "s_seniorPremium",
     values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "setJuniorPremium",
-    values: [RiskParams.PremiumCurveStruct]
   ): string;
   encodeFunctionData(
     functionFragment: "setReserveBps",
@@ -124,10 +108,6 @@ export interface RiskParamsInterface extends Interface {
     values: [AddressLike]
   ): string;
 
-  decodeFunctionResult(
-    functionFragment: "MAX_JUNIOR_XY",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(
     functionFragment: "MAX_RESERVE_BPS",
     data: BytesLike
@@ -154,19 +134,11 @@ export interface RiskParamsInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "s_juniorPremium",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "s_reserveBps",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "s_seniorPremium",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "setJuniorPremium",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -181,20 +153,6 @@ export interface RiskParamsInterface extends Interface {
     functionFragment: "transferOwnership",
     data: BytesLike
   ): Result;
-}
-
-export namespace JuniorPremiumUpdatedEvent {
-  export type InputTuple = [x: BigNumberish, y: BigNumberish, k: BigNumberish];
-  export type OutputTuple = [x: bigint, y: bigint, k: bigint];
-  export interface OutputObject {
-    x: bigint;
-    y: bigint;
-    k: bigint;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace OwnershipTransferStartedEvent {
@@ -292,8 +250,6 @@ export interface RiskParams extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  MAX_JUNIOR_XY: TypedContractMethod<[], [bigint], "view">;
-
   MAX_RESERVE_BPS: TypedContractMethod<[], [bigint], "view">;
 
   MAX_SENIOR_X: TypedContractMethod<[], [bigint], "view">;
@@ -308,24 +264,12 @@ export interface RiskParams extends BaseContract {
 
   renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
 
-  s_juniorPremium: TypedContractMethod<
-    [],
-    [[bigint, bigint, bigint] & { x: bigint; y: bigint; k: bigint }],
-    "view"
-  >;
-
   s_reserveBps: TypedContractMethod<[], [bigint], "view">;
 
   s_seniorPremium: TypedContractMethod<
     [],
     [[bigint, bigint, bigint] & { x: bigint; y: bigint; k: bigint }],
     "view"
-  >;
-
-  setJuniorPremium: TypedContractMethod<
-    [curve: RiskParams.PremiumCurveStruct],
-    [void],
-    "nonpayable"
   >;
 
   setReserveBps: TypedContractMethod<
@@ -351,9 +295,6 @@ export interface RiskParams extends BaseContract {
   ): T;
 
   getFunction(
-    nameOrSignature: "MAX_JUNIOR_XY"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
     nameOrSignature: "MAX_RESERVE_BPS"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -375,13 +316,6 @@ export interface RiskParams extends BaseContract {
     nameOrSignature: "renounceOwnership"
   ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
-    nameOrSignature: "s_juniorPremium"
-  ): TypedContractMethod<
-    [],
-    [[bigint, bigint, bigint] & { x: bigint; y: bigint; k: bigint }],
-    "view"
-  >;
-  getFunction(
     nameOrSignature: "s_reserveBps"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -390,13 +324,6 @@ export interface RiskParams extends BaseContract {
     [],
     [[bigint, bigint, bigint] & { x: bigint; y: bigint; k: bigint }],
     "view"
-  >;
-  getFunction(
-    nameOrSignature: "setJuniorPremium"
-  ): TypedContractMethod<
-    [curve: RiskParams.PremiumCurveStruct],
-    [void],
-    "nonpayable"
   >;
   getFunction(
     nameOrSignature: "setReserveBps"
@@ -412,13 +339,6 @@ export interface RiskParams extends BaseContract {
     nameOrSignature: "transferOwnership"
   ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
 
-  getEvent(
-    key: "JuniorPremiumUpdated"
-  ): TypedContractEvent<
-    JuniorPremiumUpdatedEvent.InputTuple,
-    JuniorPremiumUpdatedEvent.OutputTuple,
-    JuniorPremiumUpdatedEvent.OutputObject
-  >;
   getEvent(
     key: "OwnershipTransferStarted"
   ): TypedContractEvent<
@@ -449,17 +369,6 @@ export interface RiskParams extends BaseContract {
   >;
 
   filters: {
-    "JuniorPremiumUpdated(uint256,uint256,uint256)": TypedContractEvent<
-      JuniorPremiumUpdatedEvent.InputTuple,
-      JuniorPremiumUpdatedEvent.OutputTuple,
-      JuniorPremiumUpdatedEvent.OutputObject
-    >;
-    JuniorPremiumUpdated: TypedContractEvent<
-      JuniorPremiumUpdatedEvent.InputTuple,
-      JuniorPremiumUpdatedEvent.OutputTuple,
-      JuniorPremiumUpdatedEvent.OutputObject
-    >;
-
     "OwnershipTransferStarted(address,address)": TypedContractEvent<
       OwnershipTransferStartedEvent.InputTuple,
       OwnershipTransferStartedEvent.OutputTuple,

@@ -10,7 +10,6 @@ pragma solidity ^0.8.24;
 /** @notice Identifies which tranche a vault belongs to */
 enum TrancheId {
     SENIOR,
-    MEZZ,
     JUNIOR
 }
 
@@ -47,9 +46,9 @@ interface IPrimeCDO {
      * @notice Deposit base asset into any tranche
      * @dev Only callable by the registered TrancheVault for the given tranche.
      *      Updates accounting, routes tokens directly to strategy, records deposit.
-     *      Reverts if coverage < 105% for Senior/Mezz (coverage gate).
+     *      Reverts if coverage < 105% for Senior (coverage gate).
      *      Reverts if protocol is shortfall-paused.
-     * @param tranche Target tranche (SENIOR, MEZZ, or JUNIOR)
+     * @param tranche Target tranche (SENIOR or JUNIOR)
      * @param token Deposit token address (must be in strategy.supportedTokens())
      * @param amount Token amount to deposit
      * @return baseAmount Base-asset-equivalent value deposited (used for share calculation)
@@ -66,7 +65,7 @@ interface IPrimeCDO {
      *      cooldown type, applies fees if any, routes through appropriate cooldown handler.
      *      Always withdraws the underlying yield token (sUSDai) — no outputToken selection.
      *      See docs/PV_V3_COVERAGE_GATE.md for coverage-dependent mechanism selection.
-     * @param tranche Tranche to withdraw from (SENIOR, MEZZ, or JUNIOR)
+     * @param tranche Tranche to withdraw from (SENIOR or JUNIOR)
      * @param baseAmount Base-equivalent amount to withdraw
      * @param beneficiary Address that will receive withdrawn tokens
      * @param vaultShares Vault shares being redeemed (for SharesLock accounting)

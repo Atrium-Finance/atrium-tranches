@@ -3,8 +3,7 @@ import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 const SENIOR = 0;
-const MEZZ = 1;
-const JUNIOR = 2;
+const JUNIOR = 1;
 
 describe("PrimeCDO — Loss Coverage & Shortfall", () => {
   let cdo: any;
@@ -14,7 +13,6 @@ describe("PrimeCDO — Loss Coverage & Shortfall", () => {
 
   let owner: SignerWithAddress;
   let seniorVault: SignerWithAddress;
-  let mezzVault: SignerWithAddress;
   let juniorVault: SignerWithAddress;
   let other: SignerWithAddress;
 
@@ -29,7 +27,7 @@ describe("PrimeCDO — Loss Coverage & Shortfall", () => {
   }
 
   beforeEach(async () => {
-    [owner, seniorVault, mezzVault, juniorVault, other] = await ethers.getSigners();
+    [owner, seniorVault, juniorVault, other] = await ethers.getSigners();
 
     // --- Tokens ---
     const BaseFactory = await ethers.getContractFactory("MockBaseAsset");
@@ -59,7 +57,6 @@ describe("PrimeCDO — Loss Coverage & Shortfall", () => {
     // --- Wire up ---
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(owner).registerTranche(SENIOR, seniorVault.address);
-    await cdo.connect(owner).registerTranche(MEZZ, mezzVault.address);
     await cdo.connect(owner).registerTranche(JUNIOR, juniorVault.address);
     await cdo.connect(owner).setJuniorShortfallPausePrice(0);
   });

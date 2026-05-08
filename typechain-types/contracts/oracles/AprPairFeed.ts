@@ -26,7 +26,6 @@ import type {
 export declare namespace IAprPairFeed {
   export type TRoundStruct = {
     aprTargetSenior: BigNumberish;
-    aprTargetMezz: BigNumberish;
     aprBase: BigNumberish;
     updatedAt: BigNumberish;
     answeredInRound: BigNumberish;
@@ -34,13 +33,11 @@ export declare namespace IAprPairFeed {
 
   export type TRoundStructOutput = [
     aprTargetSenior: bigint,
-    aprTargetMezz: bigint,
     aprBase: bigint,
     updatedAt: bigint,
     answeredInRound: bigint
   ] & {
     aprTargetSenior: bigint;
-    aprTargetMezz: bigint;
     aprBase: bigint;
     updatedAt: bigint;
     answeredInRound: bigint;
@@ -60,7 +57,7 @@ export interface AprPairFeedInterface extends Interface {
       | "hasRole"
       | "latestRoundData"
       | "pushAprBase"
-      | "pushAprTarget"
+      | "pushSeniorAprTarget"
       | "renounceRole"
       | "revokeRole"
       | "s_currentRoundId"
@@ -78,12 +75,12 @@ export interface AprPairFeedInterface extends Interface {
   getEvent(
     nameOrSignatureOrTopic:
       | "AprBasePushed"
-      | "AprTargetPushed"
       | "ProviderSet"
       | "RoleAdminChanged"
       | "RoleGranted"
       | "RoleRevoked"
       | "RoundUpdated"
+      | "SeniorAprTargetPushed"
       | "StalePeriodSet"
   ): EventFragment;
 
@@ -125,8 +122,8 @@ export interface AprPairFeedInterface extends Interface {
     values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "pushAprTarget",
-    values: [BigNumberish, BigNumberish, BigNumberish]
+    functionFragment: "pushSeniorAprTarget",
+    values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "renounceRole",
@@ -206,7 +203,7 @@ export interface AprPairFeedInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "pushAprTarget",
+    functionFragment: "pushSeniorAprTarget",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -258,31 +255,6 @@ export namespace AprBasePushedEvent {
   ];
   export type OutputTuple = [roundId: bigint, value: bigint, updatedAt: bigint];
   export interface OutputObject {
-    roundId: bigint;
-    value: bigint;
-    updatedAt: bigint;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
-export namespace AprTargetPushedEvent {
-  export type InputTuple = [
-    tranche: BigNumberish,
-    roundId: BigNumberish,
-    value: BigNumberish,
-    updatedAt: BigNumberish
-  ];
-  export type OutputTuple = [
-    tranche: bigint,
-    roundId: bigint,
-    value: bigint,
-    updatedAt: bigint
-  ];
-  export interface OutputObject {
-    tranche: bigint;
     roundId: bigint;
     value: bigint;
     updatedAt: bigint;
@@ -367,22 +339,37 @@ export namespace RoundUpdatedEvent {
   export type InputTuple = [
     roundId: BigNumberish,
     aprTargetSenior: BigNumberish,
-    aprTargetMezz: BigNumberish,
     aprBase: BigNumberish,
     updatedAt: BigNumberish
   ];
   export type OutputTuple = [
     roundId: bigint,
     aprTargetSenior: bigint,
-    aprTargetMezz: bigint,
     aprBase: bigint,
     updatedAt: bigint
   ];
   export interface OutputObject {
     roundId: bigint;
     aprTargetSenior: bigint;
-    aprTargetMezz: bigint;
     aprBase: bigint;
+    updatedAt: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace SeniorAprTargetPushedEvent {
+  export type InputTuple = [
+    roundId: BigNumberish,
+    value: BigNumberish,
+    updatedAt: BigNumberish
+  ];
+  export type OutputTuple = [roundId: bigint, value: bigint, updatedAt: bigint];
+  export interface OutputObject {
+    roundId: bigint;
+    value: bigint;
     updatedAt: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
@@ -486,8 +473,8 @@ export interface AprPairFeed extends BaseContract {
     "nonpayable"
   >;
 
-  pushAprTarget: TypedContractMethod<
-    [tranche: BigNumberish, value: BigNumberish, timestamp: BigNumberish],
+  pushSeniorAprTarget: TypedContractMethod<
+    [value: BigNumberish, timestamp: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -509,9 +496,8 @@ export interface AprPairFeed extends BaseContract {
   s_latestRound: TypedContractMethod<
     [],
     [
-      [bigint, bigint, bigint, bigint, bigint] & {
+      [bigint, bigint, bigint, bigint] & {
         aprTargetSenior: bigint;
-        aprTargetMezz: bigint;
         aprBase: bigint;
         updatedAt: bigint;
         answeredInRound: bigint;
@@ -529,9 +515,8 @@ export interface AprPairFeed extends BaseContract {
   s_rounds: TypedContractMethod<
     [arg0: BigNumberish],
     [
-      [bigint, bigint, bigint, bigint, bigint] & {
+      [bigint, bigint, bigint, bigint] & {
         aprTargetSenior: bigint;
-        aprTargetMezz: bigint;
         aprBase: bigint;
         updatedAt: bigint;
         answeredInRound: bigint;
@@ -611,9 +596,9 @@ export interface AprPairFeed extends BaseContract {
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "pushAprTarget"
+    nameOrSignature: "pushSeniorAprTarget"
   ): TypedContractMethod<
-    [tranche: BigNumberish, value: BigNumberish, timestamp: BigNumberish],
+    [value: BigNumberish, timestamp: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -639,9 +624,8 @@ export interface AprPairFeed extends BaseContract {
   ): TypedContractMethod<
     [],
     [
-      [bigint, bigint, bigint, bigint, bigint] & {
+      [bigint, bigint, bigint, bigint] & {
         aprTargetSenior: bigint;
-        aprTargetMezz: bigint;
         aprBase: bigint;
         updatedAt: bigint;
         answeredInRound: bigint;
@@ -663,9 +647,8 @@ export interface AprPairFeed extends BaseContract {
   ): TypedContractMethod<
     [arg0: BigNumberish],
     [
-      [bigint, bigint, bigint, bigint, bigint] & {
+      [bigint, bigint, bigint, bigint] & {
         aprTargetSenior: bigint;
-        aprTargetMezz: bigint;
         aprBase: bigint;
         updatedAt: bigint;
         answeredInRound: bigint;
@@ -696,13 +679,6 @@ export interface AprPairFeed extends BaseContract {
     AprBasePushedEvent.InputTuple,
     AprBasePushedEvent.OutputTuple,
     AprBasePushedEvent.OutputObject
-  >;
-  getEvent(
-    key: "AprTargetPushed"
-  ): TypedContractEvent<
-    AprTargetPushedEvent.InputTuple,
-    AprTargetPushedEvent.OutputTuple,
-    AprTargetPushedEvent.OutputObject
   >;
   getEvent(
     key: "ProviderSet"
@@ -740,6 +716,13 @@ export interface AprPairFeed extends BaseContract {
     RoundUpdatedEvent.OutputObject
   >;
   getEvent(
+    key: "SeniorAprTargetPushed"
+  ): TypedContractEvent<
+    SeniorAprTargetPushedEvent.InputTuple,
+    SeniorAprTargetPushedEvent.OutputTuple,
+    SeniorAprTargetPushedEvent.OutputObject
+  >;
+  getEvent(
     key: "StalePeriodSet"
   ): TypedContractEvent<
     StalePeriodSetEvent.InputTuple,
@@ -757,17 +740,6 @@ export interface AprPairFeed extends BaseContract {
       AprBasePushedEvent.InputTuple,
       AprBasePushedEvent.OutputTuple,
       AprBasePushedEvent.OutputObject
-    >;
-
-    "AprTargetPushed(uint8,uint64,int64,uint64)": TypedContractEvent<
-      AprTargetPushedEvent.InputTuple,
-      AprTargetPushedEvent.OutputTuple,
-      AprTargetPushedEvent.OutputObject
-    >;
-    AprTargetPushed: TypedContractEvent<
-      AprTargetPushedEvent.InputTuple,
-      AprTargetPushedEvent.OutputTuple,
-      AprTargetPushedEvent.OutputObject
     >;
 
     "ProviderSet(address)": TypedContractEvent<
@@ -814,7 +786,7 @@ export interface AprPairFeed extends BaseContract {
       RoleRevokedEvent.OutputObject
     >;
 
-    "RoundUpdated(uint64,int64,int64,int64,uint64)": TypedContractEvent<
+    "RoundUpdated(uint64,int64,int64,uint64)": TypedContractEvent<
       RoundUpdatedEvent.InputTuple,
       RoundUpdatedEvent.OutputTuple,
       RoundUpdatedEvent.OutputObject
@@ -823,6 +795,17 @@ export interface AprPairFeed extends BaseContract {
       RoundUpdatedEvent.InputTuple,
       RoundUpdatedEvent.OutputTuple,
       RoundUpdatedEvent.OutputObject
+    >;
+
+    "SeniorAprTargetPushed(uint64,int64,uint64)": TypedContractEvent<
+      SeniorAprTargetPushedEvent.InputTuple,
+      SeniorAprTargetPushedEvent.OutputTuple,
+      SeniorAprTargetPushedEvent.OutputObject
+    >;
+    SeniorAprTargetPushed: TypedContractEvent<
+      SeniorAprTargetPushedEvent.InputTuple,
+      SeniorAprTargetPushedEvent.OutputTuple,
+      SeniorAprTargetPushedEvent.OutputObject
     >;
 
     "StalePeriodSet(uint256)": TypedContractEvent<

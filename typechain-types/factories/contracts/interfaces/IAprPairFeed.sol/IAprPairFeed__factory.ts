@@ -28,11 +28,6 @@ const _abi = [
           },
           {
             internalType: "int64",
-            name: "aprTargetMezz",
-            type: "int64",
-          },
-          {
-            internalType: "int64",
             name: "aprBase",
             type: "int64",
           },
@@ -64,11 +59,6 @@ const _abi = [
           {
             internalType: "int64",
             name: "aprTargetSenior",
-            type: "int64",
-          },
-          {
-            internalType: "int64",
-            name: "aprTargetMezz",
             type: "int64",
           },
           {
@@ -116,11 +106,6 @@ const _abi = [
   {
     inputs: [
       {
-        internalType: "enum TrancheId",
-        name: "tranche",
-        type: "uint8",
-      },
-      {
         internalType: "int64",
         name: "value",
         type: "int64",
@@ -131,7 +116,7 @@ const _abi = [
         type: "uint64",
       },
     ],
-    name: "pushAprTarget",
+    name: "pushSeniorAprTarget",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",

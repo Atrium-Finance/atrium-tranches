@@ -9,7 +9,7 @@
  *   npx tsx lib/scripts/withdraw-flow.ts --claim --cooldown-id 1 --tranche SENIOR
  *
  *   # Claim SharesCooldown (SHARES_LOCK):
- *   npx tsx lib/scripts/withdraw-flow.ts --claim-shares --cooldown-id 1 --tranche MEZZ
+ *   npx tsx lib/scripts/withdraw-flow.ts --claim-shares --cooldown-id 1 --tranche JUNIOR
  *
  *   Add --dry-run to preview without sending tx.
  *
@@ -82,7 +82,7 @@ async function requestWithdraw() {
 
   // 5. Request withdraw
   const vaultAddr = (
-    tranche === TrancheId.SENIOR ? addresses.seniorVault : tranche === TrancheId.MEZZ ? addresses.mezzVault : addresses.juniorVault
+    tranche === TrancheId.SENIOR ? addresses.seniorVault : addresses.juniorVault
   ) as `0x${string}`;
 
   console.log(`\n  Requesting withdraw...`);
@@ -163,7 +163,7 @@ async function claimCooldown() {
   if (!target) throw new Error(`Cooldown #${cooldownId} not found or not claimable`);
 
   const vaultAddr = (
-    tranche === TrancheId.SENIOR ? addresses.seniorVault : tranche === TrancheId.MEZZ ? addresses.mezzVault : addresses.juniorVault
+    tranche === TrancheId.SENIOR ? addresses.seniorVault : addresses.juniorVault
   ) as `0x${string}`;
 
   console.log(`  Claiming #${cooldownId}...`);
@@ -202,7 +202,7 @@ async function claimShares() {
   }
 
   const vaultAddr = (
-    tranche === TrancheId.SENIOR ? addresses.seniorVault : tranche === TrancheId.MEZZ ? addresses.mezzVault : addresses.juniorVault
+    tranche === TrancheId.SENIOR ? addresses.seniorVault : addresses.juniorVault
   ) as `0x${string}`;
 
   console.log(`  Claiming shares cooldown #${cooldownId}...`);

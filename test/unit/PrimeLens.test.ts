@@ -3,8 +3,7 @@ import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 const SENIOR = 0;
-const MEZZ = 1;
-const JUNIOR = 2;
+const JUNIOR = 1;
 
 describe("PrimeLens — Read-only aggregator", () => {
   let lens: any;
@@ -15,7 +14,6 @@ describe("PrimeLens — Read-only aggregator", () => {
   let erc20Cooldown: any;
   let sharesCooldown: any;
   let seniorVault: any;
-  let mezzVault: any;
   let juniorVault: any;
   let mockUSDai: any;
 
@@ -77,10 +75,6 @@ describe("PrimeLens — Read-only aggregator", () => {
       await cdo.getAddress(), SENIOR, await mockUSDai.getAddress(),
       "PrimeVaults Senior", "pvSENIOR",
     );
-    mezzVault = await VaultFactory.deploy(
-      await cdo.getAddress(), MEZZ, await mockUSDai.getAddress(),
-      "PrimeVaults Mezzanine", "pvMEZZ",
-    );
     juniorVault = await VaultFactory.deploy(
       await cdo.getAddress(), JUNIOR, await mockUSDai.getAddress(),
       "PrimeVaults Junior", "pvJUNIOR",
@@ -89,7 +83,6 @@ describe("PrimeLens — Read-only aggregator", () => {
     // --- Wire up ---
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(owner).registerTranche(SENIOR, await seniorVault.getAddress());
-    await cdo.connect(owner).registerTranche(MEZZ, await mezzVault.getAddress());
     await cdo.connect(owner).registerTranche(JUNIOR, await juniorVault.getAddress());
     await cdo.connect(owner).setJuniorShortfallPausePrice(0);
     await erc20Cooldown.connect(owner).setAuthorized(await cdo.getAddress(), true);
@@ -100,7 +93,6 @@ describe("PrimeLens — Read-only aggregator", () => {
     lens = await LensFactory.deploy(
       await cdo.getAddress(),
       await seniorVault.getAddress(),
-      await mezzVault.getAddress(),
       await juniorVault.getAddress(),
     );
 
@@ -120,8 +112,8 @@ describe("PrimeLens — Read-only aggregator", () => {
       expect(info.vault).to.equal(await seniorVault.getAddress());
       expect(info.name).to.equal("PrimeVaults Senior");
       expect(info.symbol).to.equal("pvSENIOR");
-      expect(info.totalAssets).to.equal(50_000n * E18);
-      // No deposits through vault, so totalSupply = 0
+      // No deposits through vault, totalSupply = 0 → totalAssets returns 0 (anti-dust guard)
+      expect(info.totalAssets).to.equal(0n);
       expect(info.totalSupply).to.equal(0n);
       // Share price = 1e18 when supply is 0
       expect(info.sharePrice).to.equal(E18);
@@ -144,7 +136,8 @@ describe("PrimeLens — Read-only aggregator", () => {
       const info = await lens.getTrancheInfo(JUNIOR);
       expect(info.vault).to.equal(await juniorVault.getAddress());
       expect(info.name).to.equal("PrimeVaults Junior");
-      expect(info.totalAssets).to.equal(100_000n * E18);
+      // No deposits through vault yet → totalAssets = 0 (anti-dust)
+      expect(info.totalAssets).to.equal(0n);
     });
   });
 
@@ -153,17 +146,15 @@ describe("PrimeLens — Read-only aggregator", () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe("getAllTranches", () => {
-    it("should return all three tranches in one call", async () => {
+    it("should return both tranches in one call", async () => {
       await seedTVL(SENIOR, 50_000n * E18);
-      await seedTVL(MEZZ, 20_000n * E18);
 
-      const [sr, mz, jr] = await lens.getAllTranches();
+      const [sr, jr] = await lens.getAllTranches();
       expect(sr.name).to.equal("PrimeVaults Senior");
-      expect(sr.totalAssets).to.equal(50_000n * E18);
-      expect(mz.name).to.equal("PrimeVaults Mezzanine");
-      expect(mz.totalAssets).to.equal(20_000n * E18);
       expect(jr.name).to.equal("PrimeVaults Junior");
-      expect(jr.totalAssets).to.equal(100_000n * E18);
+      // No vault deposits → totalAssets returns 0 (anti-dust guard)
+      expect(sr.totalAssets).to.equal(0n);
+      expect(jr.totalAssets).to.equal(0n);
     });
   });
 
@@ -174,18 +165,14 @@ describe("PrimeLens — Read-only aggregator", () => {
   describe("getProtocolHealth", () => {
     it("should return TVLs and coverage ratios", async () => {
       await seedTVL(SENIOR, 10_000n * E18);
-      await seedTVL(MEZZ, 5_000n * E18);
 
       const health = await lens.getProtocolHealth();
       expect(health.seniorTVL).to.equal(10_000n * E18);
-      expect(health.mezzTVL).to.equal(5_000n * E18);
       expect(health.juniorTVL).to.equal(100_000n * E18);
-      expect(health.totalTVL).to.equal(115_000n * E18);
+      expect(health.totalTVL).to.equal(110_000n * E18);
 
-      // cs = (10K+5K+100K)/10K = 11.5
-      expect(health.coverageSenior).to.equal(115n * E18 / 10n);
-      // cm = (5K+100K)/5K = 21
-      expect(health.coverageMezz).to.equal(21n * E18);
+      // cs = (10K + 100K)/10K = 11
+      expect(health.coverageSenior).to.equal(11n * E18);
 
       expect(health.shortfallPaused).to.be.false;
     });
@@ -196,8 +183,6 @@ describe("PrimeLens — Read-only aggregator", () => {
     });
 
     it("should reflect shortfall pause state", async () => {
-      // Artificially pause
-      const cdoAddr = await cdo.getAddress();
       // Set pause price to max so any check triggers pause
       await cdo.connect(owner).setJuniorShortfallPausePrice(ethers.MaxUint256);
 
@@ -242,13 +227,11 @@ describe("PrimeLens — Read-only aggregator", () => {
       expect(cond.mechanism).to.equal(0); // NONE
     });
 
-    it("should return coverage ratios alongside mechanism", async () => {
+    it("should return coverage alongside mechanism for Junior", async () => {
       await seedTVL(SENIOR, 10_000n * E18);
-      await seedTVL(MEZZ, 5_000n * E18);
 
-      const cond = await lens.previewWithdrawCondition(MEZZ);
+      const cond = await lens.previewWithdrawCondition(JUNIOR);
       expect(cond.coverageSenior).to.be.gt(0n);
-      expect(cond.coverageMezz).to.be.gt(0n);
     });
   });
 

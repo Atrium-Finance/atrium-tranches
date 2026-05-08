@@ -28,20 +28,6 @@ export const PRIME_LENS_ABI = [
           { name: "sharePrice", type: "uint256" },
           { name: "apy", type: "uint256" },
         ],
-        name: "mezz",
-        type: "tuple",
-      },
-      {
-        components: [
-          { name: "trancheId", type: "uint8" },
-          { name: "vault", type: "address" },
-          { name: "name", type: "string" },
-          { name: "symbol", type: "string" },
-          { name: "totalAssets", type: "uint256" },
-          { name: "totalSupply", type: "uint256" },
-          { name: "sharePrice", type: "uint256" },
-          { name: "apy", type: "uint256" },
-        ],
         name: "junior",
         type: "tuple",
       },
@@ -80,11 +66,9 @@ export const PRIME_LENS_ABI = [
           { name: "seniorTVL", type: "uint256" },
           { name: "seniorPrincipal", type: "uint256" },
           { name: "seniorYield", type: "uint256" },
-          { name: "mezzTVL", type: "uint256" },
           { name: "juniorTVL", type: "uint256" },
           { name: "totalTVL", type: "uint256" },
           { name: "coverageSenior", type: "uint256" },
-          { name: "coverageMezz", type: "uint256" },
           { name: "minCoverageForDeposit", type: "uint256" },
           { name: "shortfallPaused", type: "bool" },
           { name: "juniorShortfallPausePrice", type: "uint256" },
@@ -153,7 +137,6 @@ export const PRIME_LENS_ABI = [
           { name: "feeBps", type: "uint256" },
           { name: "cooldownDuration", type: "uint256" },
           { name: "coverageSenior", type: "uint256" },
-          { name: "coverageMezz", type: "uint256" },
         ],
         name: "cond",
         type: "tuple",
@@ -410,7 +393,6 @@ export const APR_PAIR_FEED_ABI = [
       {
         components: [
           { name: "aprTargetSenior", type: "int64" },
-          { name: "aprTargetMezz", type: "int64" },
           { name: "aprBase", type: "int64" },
           { name: "updatedAt", type: "uint64" },
           { name: "answeredInRound", type: "uint64" },
@@ -429,7 +411,6 @@ export const APR_PAIR_FEED_ABI = [
       {
         components: [
           { name: "aprTargetSenior", type: "int64" },
-          { name: "aprTargetMezz", type: "int64" },
           { name: "aprBase", type: "int64" },
           { name: "updatedAt", type: "uint64" },
           { name: "answeredInRound", type: "uint64" },
@@ -447,13 +428,6 @@ export const ACCOUNTING_ABI = [
   {
     inputs: [],
     name: "getSeniorAPY",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "getMezzAPY",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function",

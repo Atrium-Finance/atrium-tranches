@@ -27,13 +27,6 @@ describe("RiskParams", () => {
       expect(k).to.equal(BigInt("300000000000000000")); // 0.3e18
     });
 
-    it("should set correct junior premium defaults", async () => {
-      const [x, y, k] = await riskParams.s_juniorPremium();
-      expect(x).to.equal(BigInt("50000000000000000")); // 0.05e18
-      expect(y).to.equal(BigInt("100000000000000000")); // 0.10e18
-      expect(k).to.equal(BigInt("500000000000000000")); // 0.5e18
-    });
-
     it("should set correct reserveBps default", async () => {
       expect(await riskParams.s_reserveBps()).to.equal(500);
     });
@@ -118,62 +111,6 @@ describe("RiskParams", () => {
       };
       await expect(
         riskParams.connect(other).setSeniorPremium(curve),
-      ).to.be.revertedWithCustomError(riskParams, "OwnableUnauthorizedAccount");
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════
-  //  setJuniorPremium
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe("setJuniorPremium", () => {
-    it("should update junior premium with valid params", async () => {
-      const curve = {
-        x: (8n * E18) / 100n,
-        y: (15n * E18) / 100n,
-        k: (4n * E18) / 10n,
-      };
-      await expect(riskParams.setJuniorPremium(curve))
-        .to.emit(riskParams, "JuniorPremiumUpdated")
-        .withArgs(curve.x, curve.y, curve.k);
-
-      const [x, y, k] = await riskParams.s_juniorPremium();
-      expect(x).to.equal(curve.x);
-      expect(y).to.equal(curve.y);
-      expect(k).to.equal(curve.k);
-    });
-
-    it("should accept x+y at max boundary (0.50e18)", async () => {
-      const curve = {
-        x: (20n * E18) / 100n,
-        y: (30n * E18) / 100n,
-        k: (5n * E18) / 10n,
-      };
-      await expect(riskParams.setJuniorPremium(curve)).to.not.be.reverted;
-    });
-
-    it("should revert when x+y > 0.50e18", async () => {
-      const curve = {
-        x: (30n * E18) / 100n,
-        y: (21n * E18) / 100n,
-        k: (5n * E18) / 10n,
-      };
-      await expect(
-        riskParams.setJuniorPremium(curve),
-      ).to.be.revertedWithCustomError(
-        riskParams,
-        "PrimeVaults__JuniorXYTooHigh",
-      );
-    });
-
-    it("should revert when called by non-owner", async () => {
-      const curve = {
-        x: (5n * E18) / 100n,
-        y: (10n * E18) / 100n,
-        k: (5n * E18) / 10n,
-      };
-      await expect(
-        riskParams.connect(other).setJuniorPremium(curve),
       ).to.be.revertedWithCustomError(riskParams, "OwnableUnauthorizedAccount");
     });
   });

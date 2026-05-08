@@ -1,10 +1,9 @@
 /**
- * Deposit USD.AI into any tranche (Senior, Mezz, Junior).
+ * Deposit USD.AI into any tranche (Senior, Junior).
  *
  * Usage:
  *   ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche SENIOR --amount 100
- *   ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche MEZZ --amount 50 --dry-run
- *   ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche JUNIOR --amount 25
+ *   ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche JUNIOR --amount 25 --dry-run
  */
 
 import { parseUnits, formatUnits, type Hash } from "viem";
@@ -46,7 +45,7 @@ async function main() {
   // 3. Protocol health
   const health = await sdk.getProtocolHealth();
   console.table(health);
-  console.log(`  Coverage Sr: ${fmtPct(health.coverageSenior)} | Mz: ${fmtPct(health.coverageMezz)}`);
+  console.log(`  Coverage Sr: ${fmtPct(health.coverageSenior)}`);
   if (health.shortfallPaused) throw new Error("Protocol is shortfall paused");
 
   if (dryRun) {
@@ -55,10 +54,7 @@ async function main() {
   }
 
   // 4. Approve if needed
-  const vaultAddr =
-    tranche === TrancheId.SENIOR ? addresses.seniorVault
-    : tranche === TrancheId.MEZZ ? addresses.mezzVault
-    : addresses.juniorVault;
+  const vaultAddr = tranche === TrancheId.SENIOR ? addresses.seniorVault : addresses.juniorVault;
   const allowance = await sdk.getTokenAllowance(USDAI, user, vaultAddr);
   if (allowance < depositAmount) {
     console.log(`\n  Approving USD.AI...`);

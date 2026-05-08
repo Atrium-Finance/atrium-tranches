@@ -3,12 +3,10 @@ import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 const SENIOR = 0;
-const MEZZ = 1;
-const JUNIOR = 2;
+const JUNIOR = 1;
 
 describe("TrancheVault — ERC-4626", () => {
   let seniorVault: any;
-  let mezzVault: any;
   let juniorVault: any;
   let cdo: any;
   let accounting: any;
@@ -75,15 +73,11 @@ describe("TrancheVault — ERC-4626", () => {
       await sharesCooldown.getAddress(), await mockSUSDai.getAddress(), owner.address,
     );
 
-    // --- Deploy 3 TrancheVaults ---
+    // --- Deploy 2 TrancheVaults ---
     const VaultFactory = await ethers.getContractFactory("TrancheVault");
     seniorVault = await VaultFactory.deploy(
       await cdo.getAddress(), SENIOR, await mockUSDai.getAddress(),
       "PrimeVaults Senior", "pvSENIOR",
-    );
-    mezzVault = await VaultFactory.deploy(
-      await cdo.getAddress(), MEZZ, await mockUSDai.getAddress(),
-      "PrimeVaults Mezzanine", "pvMEZZ",
     );
     juniorVault = await VaultFactory.deploy(
       await cdo.getAddress(), JUNIOR, await mockUSDai.getAddress(),
@@ -93,7 +87,6 @@ describe("TrancheVault — ERC-4626", () => {
     // --- Wire up ---
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(owner).registerTranche(SENIOR, await seniorVault.getAddress());
-    await cdo.connect(owner).registerTranche(MEZZ, await mezzVault.getAddress());
     await cdo.connect(owner).registerTranche(JUNIOR, await juniorVault.getAddress());
     await cdo.connect(owner).setJuniorShortfallPausePrice(0);
 
@@ -107,10 +100,8 @@ describe("TrancheVault — ERC-4626", () => {
 
     // --- Approvals ---
     await mockUSDai.connect(alice).approve(await seniorVault.getAddress(), ethers.MaxUint256);
-    await mockUSDai.connect(alice).approve(await mezzVault.getAddress(), ethers.MaxUint256);
     await mockUSDai.connect(alice).approve(await juniorVault.getAddress(), ethers.MaxUint256);
     await mockUSDai.connect(bob).approve(await seniorVault.getAddress(), ethers.MaxUint256);
-    await mockUSDai.connect(bob).approve(await mezzVault.getAddress(), ethers.MaxUint256);
     await mockUSDai.connect(bob).approve(await juniorVault.getAddress(), ethers.MaxUint256);
 
     // --- Configure strategy to track sUSDai in totalAssets ---
@@ -122,12 +113,10 @@ describe("TrancheVault — ERC-4626", () => {
     await mockSUSDai.connect(alice).deposit(100_000n * E18, alice.address);
 
     // --- sUSDai approvals ---
-    const sUSDaiAddr = await mockSUSDai.getAddress();
     await (mockSUSDai as any).connect(alice).approve(await seniorVault.getAddress(), ethers.MaxUint256);
-    await (mockSUSDai as any).connect(alice).approve(await mezzVault.getAddress(), ethers.MaxUint256);
     await (mockSUSDai as any).connect(alice).approve(await juniorVault.getAddress(), ethers.MaxUint256);
 
-    // --- Seed Junior TVL so Sr/Mz coverage gate passes ---
+    // --- Seed Junior TVL so Sr coverage gate passes ---
     await seedTVL(JUNIOR, 500_000n * E18);
   });
 
@@ -149,11 +138,6 @@ describe("TrancheVault — ERC-4626", () => {
       expect(await seniorVault.totalAssets()).to.equal(11_000n * E18);
     });
 
-    it("should read Mezzanine TVL from Accounting after deposit", async () => {
-      await mezzVault.connect(alice).deposit(5_000n * E18, alice.address);
-      expect(await mezzVault.totalAssets()).to.equal(5_000n * E18);
-    });
-
     it("should read Junior TVL from Accounting after deposit", async () => {
       // Junior has 500K seeded but no shares → totalAssets returns 0
       expect(await juniorVault.totalAssets()).to.equal(0n);
@@ -167,7 +151,7 @@ describe("TrancheVault — ERC-4626", () => {
   //  deposit → mint correct shares (share price invariant)
   // ═══════════════════════════════════════════════════════════════════
 
-  describe("deposit — Senior/Mezz", () => {
+  describe("deposit — Senior", () => {
     it("should mint 1:1 shares on first deposit", async () => {
       const amount = 10_000n * E18;
       const shares = await seniorVault.connect(alice).deposit.staticCall(amount, alice.address);
@@ -194,12 +178,6 @@ describe("TrancheVault — ERC-4626", () => {
       const priceAfter = (await seniorVault.totalAssets() * E18) / await seniorVault.totalSupply();
 
       expect(priceAfter).to.equal(priceBefore);
-    });
-
-    it("should work for Mezzanine vault", async () => {
-      await mezzVault.connect(alice).deposit(5_000n * E18, alice.address);
-      expect(await mezzVault.balanceOf(alice.address)).to.equal(5_000n * E18);
-      expect(await mezzVault.totalAssets()).to.equal(5_000n * E18);
     });
 
     it("should emit Deposit event", async () => {

@@ -3,10 +3,6 @@ import { ethers } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
-const TRANCHE_SENIOR = 0;
-const TRANCHE_MEZZ = 1;
-const TRANCHE_JUNIOR = 2;
-
 describe("AprPairFeed", () => {
   let feed: any;
   let provider: any;
@@ -77,17 +73,16 @@ describe("AprPairFeed", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  updateRoundData — PULL writes same Aave benchmark to both legs
+  //  updateRoundData — PULL writes Aave benchmark to Senior aprTarget
   // ═══════════════════════════════════════════════════════════════════
 
   describe("updateRoundData (PULL)", () => {
-    it("should write same benchmark to both Senior and Mezz aprTarget legs", async () => {
+    it("should write Aave benchmark to Senior aprTarget", async () => {
       await time.increase(10);
       await feed.connect(keeper).updateRoundData();
 
       const round = await feed.getRoundData(1);
       expect(round.aprTargetSenior).to.equal(PROVIDER_APR_TARGET);
-      expect(round.aprTargetMezz).to.equal(PROVIDER_APR_TARGET);
       expect(round.aprBase).to.equal(0);
       expect(round.answeredInRound).to.equal(1);
     });
@@ -103,7 +98,7 @@ describe("AprPairFeed", () => {
       expect(prevAfter).to.equal(E18);
     });
 
-    it("should emit RoundUpdated with both target legs equal", async () => {
+    it("should emit RoundUpdated with Senior target leg", async () => {
       await time.increase(10);
       const tx = await feed.connect(keeper).updateRoundData();
       const receipt = await tx.wait();
@@ -112,7 +107,6 @@ describe("AprPairFeed", () => {
       );
       expect(log).to.not.equal(undefined);
       expect(log.args.aprTargetSenior).to.equal(PROVIDER_APR_TARGET);
-      expect(log.args.aprTargetMezz).to.equal(PROVIDER_APR_TARGET);
     });
 
     it("should update s_latestRound for fast path", async () => {
@@ -121,7 +115,6 @@ describe("AprPairFeed", () => {
 
       const latest = await feed.s_latestRound();
       expect(latest.aprTargetSenior).to.equal(PROVIDER_APR_TARGET);
-      expect(latest.aprTargetMezz).to.equal(PROVIDER_APR_TARGET);
       expect(latest.answeredInRound).to.equal(1);
       expect(latest.updatedAt).to.be.gt(0);
     });
@@ -150,71 +143,49 @@ describe("AprPairFeed", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  pushAprTarget — per-tranche keeper push
+  //  pushSeniorAprTarget — keeper push (Senior leg only)
   // ═══════════════════════════════════════════════════════════════════
 
-  describe("pushAprTarget", () => {
+  describe("pushSeniorAprTarget", () => {
     beforeEach(async () => {
-      // Seed a baseline round so other legs can be carried forward
+      // Seed a baseline round so base can be carried forward
       await time.increase(10);
       await feed.connect(keeper).updateRoundData();
     });
 
-    it("should override only Senior leg, carrying Mezz + base forward", async () => {
+    it("should override Senior leg, carrying base forward", async () => {
       await time.increase(60);
       const ts = (await time.latest()) + 1;
       const newSenior = 50_000_000_000n; // 5%
 
-      await feed.connect(keeper).pushAprTarget(TRANCHE_SENIOR, newSenior, ts);
+      await feed.connect(keeper).pushSeniorAprTarget(newSenior, ts);
 
       const round = await feed.getRoundData(2);
       expect(round.aprTargetSenior).to.equal(newSenior);
-      expect(round.aprTargetMezz).to.equal(PROVIDER_APR_TARGET);
       expect(round.aprBase).to.equal(0);
     });
 
-    it("should override only Mezz leg, carrying Senior + base forward", async () => {
-      await time.increase(60);
-      const ts = (await time.latest()) + 1;
-      const newMezz = 60_000_000_000n; // 6%
-
-      await feed.connect(keeper).pushAprTarget(TRANCHE_MEZZ, newMezz, ts);
-
-      const round = await feed.getRoundData(2);
-      expect(round.aprTargetSenior).to.equal(PROVIDER_APR_TARGET);
-      expect(round.aprTargetMezz).to.equal(newMezz);
-      expect(round.aprBase).to.equal(0);
-    });
-
-    it("should emit AprTargetPushed event with tranche indexed", async () => {
+    it("should emit SeniorAprTargetPushed event", async () => {
       await time.increase(60);
       const ts = (await time.latest()) + 1;
       const newSenior = 70_000_000_000n;
 
-      await expect(feed.connect(keeper).pushAprTarget(TRANCHE_SENIOR, newSenior, ts))
-        .to.emit(feed, "AprTargetPushed")
-        .withArgs(TRANCHE_SENIOR, 2, newSenior, ts);
-    });
-
-    it("should revert with InvalidTrancheTarget for JUNIOR", async () => {
-      await time.increase(60);
-      const ts = (await time.latest()) + 1;
-      await expect(
-        feed.connect(keeper).pushAprTarget(TRANCHE_JUNIOR, 50_000_000_000n, ts),
-      ).to.be.revertedWithCustomError(feed, "PrimeVaults__InvalidTrancheTarget");
+      await expect(feed.connect(keeper).pushSeniorAprTarget(newSenior, ts))
+        .to.emit(feed, "SeniorAprTargetPushed")
+        .withArgs(2, newSenior, ts);
     });
 
     it("should revert without KEEPER_ROLE", async () => {
       const ts = (await time.latest()) + 1;
       await expect(
-        feed.connect(other).pushAprTarget(TRANCHE_SENIOR, 50_000_000_000n, ts),
+        feed.connect(other).pushSeniorAprTarget(50_000_000_000n, ts),
       ).to.be.reverted;
     });
 
     it("should revert on out-of-order timestamp", async () => {
       const latest = await feed.s_latestRound();
       await expect(
-        feed.connect(keeper).pushAprTarget(TRANCHE_SENIOR, 50_000_000_000n, latest.updatedAt),
+        feed.connect(keeper).pushSeniorAprTarget(50_000_000_000n, latest.updatedAt),
       ).to.be.revertedWithCustomError(feed, "PrimeVaults__OutOfOrderUpdate");
     });
 
@@ -223,21 +194,21 @@ describe("AprPairFeed", () => {
       const ts = (await time.latest()) + 1;
       const tooHigh = 3_000_000_000_000n; // 300%
       await expect(
-        feed.connect(keeper).pushAprTarget(TRANCHE_SENIOR, tooHigh, ts),
+        feed.connect(keeper).pushSeniorAprTarget(tooHigh, ts),
       ).to.be.revertedWithCustomError(feed, "PrimeVaults__InvalidApr");
     });
 
     it("should revert on stale timestamp", async () => {
       const stale = (await time.latest()) - STALE_AFTER - 100;
       await expect(
-        feed.connect(keeper).pushAprTarget(TRANCHE_SENIOR, 50_000_000_000n, stale),
+        feed.connect(keeper).pushSeniorAprTarget(50_000_000_000n, stale),
       ).to.be.revertedWithCustomError(feed, "PrimeVaults__StaleUpdate");
     });
 
     it("should revert on future-drift timestamp", async () => {
       const future = (await time.latest()) + 3600;
       await expect(
-        feed.connect(keeper).pushAprTarget(TRANCHE_SENIOR, 50_000_000_000n, future),
+        feed.connect(keeper).pushSeniorAprTarget(50_000_000_000n, future),
       ).to.be.revertedWithCustomError(feed, "PrimeVaults__OutOfOrderUpdate");
     });
   });
@@ -252,7 +223,7 @@ describe("AprPairFeed", () => {
       await feed.connect(keeper).updateRoundData();
     });
 
-    it("should override only aprBase, carrying both target legs forward", async () => {
+    it("should override only aprBase, carrying Senior target forward", async () => {
       await time.increase(60);
       const ts = (await time.latest()) + 1;
       const newBase = 80_000_000_000n; // 8%
@@ -261,7 +232,6 @@ describe("AprPairFeed", () => {
 
       const round = await feed.getRoundData(2);
       expect(round.aprTargetSenior).to.equal(PROVIDER_APR_TARGET);
-      expect(round.aprTargetMezz).to.equal(PROVIDER_APR_TARGET);
       expect(round.aprBase).to.equal(newBase);
     });
 
@@ -295,26 +265,21 @@ describe("AprPairFeed", () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe("mixed push sequence", () => {
-    it("should preserve cross-leg values across a Senior→Mezz→Base sequence", async () => {
+    it("should preserve cross-leg values across a Senior→Base sequence", async () => {
       await time.increase(10);
-      await feed.connect(keeper).updateRoundData(); // round 1: both legs = 4%, base = 0
+      await feed.connect(keeper).updateRoundData(); // round 1: Senior = 4%, base = 0
 
       await time.increase(60);
       let ts = (await time.latest()) + 1;
-      await feed.connect(keeper).pushAprTarget(TRANCHE_SENIOR, 50_000_000_000n, ts); // round 2
+      await feed.connect(keeper).pushSeniorAprTarget(50_000_000_000n, ts); // round 2
 
       await time.increase(60);
       ts = (await time.latest()) + 1;
-      await feed.connect(keeper).pushAprTarget(TRANCHE_MEZZ, 60_000_000_000n, ts); // round 3
+      await feed.connect(keeper).pushAprBase(70_000_000_000n, ts); // round 3
 
-      await time.increase(60);
-      ts = (await time.latest()) + 1;
-      await feed.connect(keeper).pushAprBase(70_000_000_000n, ts); // round 4
-
-      const r4 = await feed.getRoundData(4);
-      expect(r4.aprTargetSenior).to.equal(50_000_000_000n);
-      expect(r4.aprTargetMezz).to.equal(60_000_000_000n);
-      expect(r4.aprBase).to.equal(70_000_000_000n);
+      const r3 = await feed.getRoundData(3);
+      expect(r3.aprTargetSenior).to.equal(50_000_000_000n);
+      expect(r3.aprBase).to.equal(70_000_000_000n);
     });
   });
 
@@ -329,7 +294,6 @@ describe("AprPairFeed", () => {
 
       const round = await feed.latestRoundData();
       expect(round.aprTargetSenior).to.equal(PROVIDER_APR_TARGET);
-      expect(round.aprTargetMezz).to.equal(PROVIDER_APR_TARGET);
       expect(round.answeredInRound).to.equal(1);
     });
 
@@ -348,11 +312,10 @@ describe("AprPairFeed", () => {
       expect(prevAfter).to.equal(prevBefore);
     });
 
-    it("should fall back to provider view if cache empty (duplicates target to both legs)", async () => {
+    it("should fall back to provider view if cache empty", async () => {
       const round = await feed.latestRoundData();
 
       expect(round.aprTargetSenior).to.equal(PROVIDER_APR_TARGET);
-      expect(round.aprTargetMezz).to.equal(PROVIDER_APR_TARGET);
       expect(round.answeredInRound).to.equal(1);
     });
   });

@@ -9,19 +9,16 @@ pragma solidity ^0.8.24;
 
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { IAprPairFeed, IStrategyAprPairProvider } from "../interfaces/IAprPairFeed.sol";
-import { TrancheId } from "../interfaces/IPrimeCDO.sol";
 
 /**
  * @title AprPairFeed
  * @notice Manages and provides APR pair (aaveBenchmarkAPR, strategyAPR) data.
  * @dev APR data has two sources:
  *      1. External (PUSH): APRs pushed directly by authorized observers (KEEPER_ROLE)
- *         - pushAprTarget(tranche, value, timestamp): override Senior- or Mezz-leg aprTarget
+ *         - pushSeniorAprTarget(value, timestamp): override Senior aprTarget
  *         - pushAprBase(value, timestamp): override aprBase
- *         Each push writes a NEW round, carrying the other fields forward from latest.
+ *         Each push writes a NEW round, carrying the other field forward from latest.
  *      2. Strategy (PULL): APRs fetched from on-chain provider (PrimeCDO auto-pulls on deposit/withdraw)
- *         The provider returns a single aprTarget; the Feed duplicates it to both
- *         Senior and Mezz target legs.
  *      The feed prefers PUSH/PULL cached data, but falls back to provider view if cache is stale.
  *      20-round circular buffer. Bounds [-50%, +200%]. int64 × 12 decimals.
  */
@@ -53,8 +50,8 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
     //  EVENTS
     // ═══════════════════════════════════════════════════════════════════
 
-    event RoundUpdated(uint64 roundId, int64 aprTargetSenior, int64 aprTargetMezz, int64 aprBase, uint64 updatedAt);
-    event AprTargetPushed(TrancheId indexed tranche, uint64 roundId, int64 value, uint64 updatedAt);
+    event RoundUpdated(uint64 roundId, int64 aprTargetSenior, int64 aprBase, uint64 updatedAt);
+    event SeniorAprTargetPushed(uint64 roundId, int64 value, uint64 updatedAt);
     event AprBasePushed(uint64 roundId, int64 value, uint64 updatedAt);
     event ProviderSet(address newProvider);
     event StalePeriodSet(uint256 stalePeriod);
@@ -67,7 +64,6 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
     error PrimeVaults__OutOfOrderUpdate(uint64 timestamp);
     error PrimeVaults__InvalidApr(int64 value);
     error PrimeVaults__RoundNotAvailable(uint64 roundId);
-    error PrimeVaults__InvalidTrancheTarget(TrancheId tranche);
 
     // ═══════════════════════════════════════════════════════════════════
     //  CONSTRUCTOR
@@ -85,8 +81,7 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
 
     /**
      * @notice Get latest APR pair — cache if fresh, provider view if stale.
-     * @dev Fallback calls getAprPairView() (view, no state mutation). Provider's
-     *      single aprTarget is duplicated to both Senior and Mezz legs.
+     * @dev Fallback calls getAprPairView() (view, no state mutation).
      */
     function latestRoundData() external view override returns (TRound memory) {
         TRound memory round = s_latestRound;
@@ -106,7 +101,6 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
         return
             TRound({
                 aprTargetSenior: aprTarget,
-                aprTargetMezz: aprTarget,
                 aprBase: aprBase,
                 updatedAt: t1,
                 answeredInRound: s_currentRoundId + 1
@@ -133,11 +127,10 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
      * @notice Pull APR from provider — shifts snapshots + caches result.
      * @dev Called by PrimeCDO on every deposit/withdraw (auto-pull), or by keeper.
      *      Provider.getAprPair() is state-changing (shifts sUSDai rate snapshots).
-     *      Provider's single aprTarget is duplicated to both Senior and Mezz legs.
      */
     function updateRoundData() external override onlyRole(KEEPER_ROLE) {
         (int64 aprTarget, int64 aprBase, uint64 t) = s_provider.getAprPair();
-        _storeRound(aprTarget, aprTarget, aprBase, t);
+        _storeRound(aprTarget, aprBase, t);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -145,40 +138,28 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * @notice Push a new aprTarget value for a single tranche.
-     * @dev Bypasses on-chain provider — useful when keeper computes per-tranche
-     *      benchmarks off-chain. Other fields carried forward from latest round.
+     * @notice Push a new Senior aprTarget value.
+     * @dev Bypasses on-chain provider — useful when keeper computes the benchmark
+     *      off-chain. The aprBase is carried forward from the latest round.
      *      Subject to same validation (_storeRound checks staleness, ordering, bounds).
-     * @param tranche Must be SENIOR or MEZZ — JUNIOR has no aprTarget floor.
      * @param value New aprTarget in int64 × 12 decimals
      * @param timestamp Unix timestamp of the observation
      */
-    function pushAprTarget(TrancheId tranche, int64 value, uint64 timestamp) external onlyRole(KEEPER_ROLE) {
+    function pushSeniorAprTarget(int64 value, uint64 timestamp) external onlyRole(KEEPER_ROLE) {
         TRound memory latest = s_latestRound;
-
-        int64 srTarget = latest.aprTargetSenior;
-        int64 mzTarget = latest.aprTargetMezz;
-        if (tranche == TrancheId.SENIOR) {
-            srTarget = value;
-        } else if (tranche == TrancheId.MEZZ) {
-            mzTarget = value;
-        } else {
-            revert PrimeVaults__InvalidTrancheTarget(tranche);
-        }
-
-        _storeRound(srTarget, mzTarget, latest.aprBase, timestamp);
-        emit AprTargetPushed(tranche, s_currentRoundId, value, timestamp);
+        _storeRound(value, latest.aprBase, timestamp);
+        emit SeniorAprTargetPushed(s_currentRoundId, value, timestamp);
     }
 
     /**
-     * @notice Push a new aprBase value (strategy APR). Both tranche aprTarget legs
-     *         are carried forward from the latest round.
+     * @notice Push a new aprBase value (strategy APR). The Senior aprTarget is
+     *         carried forward from the latest round.
      * @param value New aprBase in int64 × 12 decimals
      * @param timestamp Unix timestamp of the observation
      */
     function pushAprBase(int64 value, uint64 timestamp) external onlyRole(KEEPER_ROLE) {
         TRound memory latest = s_latestRound;
-        _storeRound(latest.aprTargetSenior, latest.aprTargetMezz, value, timestamp);
+        _storeRound(latest.aprTargetSenior, value, timestamp);
         emit AprBasePushed(s_currentRoundId, value, timestamp);
     }
 
@@ -186,7 +167,7 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
     //  INTERNAL
     // ═══════════════════════════════════════════════════════════════════
 
-    function _storeRound(int64 aprTargetSenior, int64 aprTargetMezz, int64 aprBase, uint64 t) internal {
+    function _storeRound(int64 aprTargetSenior, int64 aprBase, uint64 t) internal {
         if (uint256(t) < block.timestamp - s_roundStaleAfter) {
             revert PrimeVaults__StaleUpdate(t);
         }
@@ -197,7 +178,6 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
             revert PrimeVaults__OutOfOrderUpdate(t);
         }
         _ensureValid(aprTargetSenior);
-        _ensureValid(aprTargetMezz);
         _ensureValid(aprBase);
 
         s_currentRoundId++;
@@ -205,7 +185,6 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
 
         TRound memory round = TRound({
             aprTargetSenior: aprTargetSenior,
-            aprTargetMezz: aprTargetMezz,
             aprBase: aprBase,
             updatedAt: t,
             answeredInRound: s_currentRoundId
@@ -220,7 +199,7 @@ contract AprPairFeed is IAprPairFeed, AccessControl {
             s_oldestRoundId = 1;
         }
 
-        emit RoundUpdated(s_currentRoundId, aprTargetSenior, aprTargetMezz, aprBase, t);
+        emit RoundUpdated(s_currentRoundId, aprTargetSenior, aprBase, t);
     }
 
     function _ensureValid(int64 answer) internal pure {
