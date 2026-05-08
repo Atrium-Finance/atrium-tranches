@@ -201,8 +201,20 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
 
     /**
      * @notice Request withdrawal from any tranche.
-     * @dev Flow: update accounting → compute fee → route to mechanism.
-     *      Mechanism selected by RedemptionPolicy based on per-tranche coverage.
+     * @dev Flow: update accounting → re-quote baseAmount from current state →
+     *      compute fee → route to mechanism. Mechanism selected by RedemptionPolicy
+     *      based on per-tranche coverage.
+     *
+     *      Audit fix (H#1): the `baseAmount` argument is treated as a UI hint only.
+     *      After `_updateAccounting()` may apply a loss waterfall (concurrent sUSDai
+     *      depreciation, accumulated drift, etc.) the tranche TVL can drop below the
+     *      caller's quote. We therefore re-quote `baseAmount` from `vaultShares` and
+     *      the post-update TVL/totalSupply, ensuring the user redeems their fair
+     *      share of the tranche after any in-call loss is applied.
+     * @param tranche Target tranche.
+     * @param baseAmount Caller-quoted base amount (advisory only, recomputed below).
+     * @param beneficiary Receiver of withdrawn output token.
+     * @param vaultShares Vault shares being redeemed — authoritative input for sizing.
      */
     function requestWithdraw(
         TrancheId tranche,
@@ -210,8 +222,13 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         address beneficiary,
         uint256 vaultShares
     ) external override onlyTranche(tranche) whenNotShortfallPaused returns (CDOWithdrawResult memory result) {
-        if (baseAmount == 0) revert PrimeVaults__ZeroAmount();
+        if (vaultShares == 0) revert PrimeVaults__ZeroAmount();
         _updateAccounting();
+
+        // Re-quote baseAmount from post-update state to prevent stale-quote race.
+        // See audit finding H#1.
+        baseAmount = _quoteBaseAmount(tranche, vaultShares);
+        if (baseAmount == 0) revert PrimeVaults__ZeroAmount();
 
         // Fee from RedemptionPolicy
         RedemptionPolicy.PolicyResult memory policy = i_redemptionPolicy.evaluate(tranche);
@@ -442,6 +459,21 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         (uint256 sr, uint256 jr) = i_accounting.getAllTVLs();
         if (sr == 0) return type(uint256).max;
         return ((sr + jr) * PRECISION) / sr;
+    }
+
+    /**
+     * @dev Re-quote baseAmount from current tranche TVL and vault totalSupply.
+     *      Audit fix H#1: prevents stale-quote race across in-call loss waterfall.
+     *      Full drain (vaultShares == vaultSupply) returns the full tranche TVL to
+     *      avoid leaving dust; partial redeems pro-rate the share count.
+     */
+    function _quoteBaseAmount(TrancheId tranche, uint256 vaultShares) internal view returns (uint256) {
+        address vault = s_tranches[tranche];
+        uint256 vaultSupply = IERC20(vault).totalSupply();
+        if (vaultSupply == 0) return 0;
+        uint256 freshTVL = i_accounting.getTrancheTVL(tranche);
+        if (vaultShares >= vaultSupply) return freshTVL;
+        return (vaultShares * freshTVL) / vaultSupply;
     }
 
     /**
