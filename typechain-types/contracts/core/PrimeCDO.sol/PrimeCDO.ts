@@ -54,6 +54,7 @@ export type CDOWithdrawResultStructOutput = [
 export interface PrimeCDOInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "MAX_CLAIM_GROWTH_BPS_LIMIT"
       | "PRECISION"
       | "acceptOwnership"
       | "accounting"
@@ -75,12 +76,15 @@ export interface PrimeCDOInterface extends Interface {
       | "requestWithdraw"
       | "s_guardian"
       | "s_juniorShortfallPausePrice"
+      | "s_maxClaimGrowthBps"
       | "s_minCoverageForDeposit"
+      | "s_sharesLockBaseSnapshot"
       | "s_shortfallPaused"
       | "s_tranches"
       | "s_vaultToTranche"
       | "setGuardian"
       | "setJuniorShortfallPausePrice"
+      | "setMaxClaimGrowthBps"
       | "setMinCoverageForDeposit"
       | "strategy"
       | "transferOwnership"
@@ -99,6 +103,10 @@ export interface PrimeCDOInterface extends Interface {
       | "TrancheRegistered"
   ): EventFragment;
 
+  encodeFunctionData(
+    functionFragment: "MAX_CLAIM_GROWTH_BPS_LIMIT",
+    values?: undefined
+  ): string;
   encodeFunctionData(functionFragment: "PRECISION", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "acceptOwnership",
@@ -175,8 +183,16 @@ export interface PrimeCDOInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "s_maxClaimGrowthBps",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "s_minCoverageForDeposit",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "s_sharesLockBaseSnapshot",
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "s_shortfallPaused",
@@ -199,6 +215,10 @@ export interface PrimeCDOInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "setMaxClaimGrowthBps",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setMinCoverageForDeposit",
     values: [BigNumberish]
   ): string;
@@ -216,6 +236,10 @@ export interface PrimeCDOInterface extends Interface {
     values?: undefined
   ): string;
 
+  decodeFunctionResult(
+    functionFragment: "MAX_CLAIM_GROWTH_BPS_LIMIT",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "PRECISION", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "acceptOwnership",
@@ -280,7 +304,15 @@ export interface PrimeCDOInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "s_maxClaimGrowthBps",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "s_minCoverageForDeposit",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "s_sharesLockBaseSnapshot",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -298,6 +330,10 @@ export interface PrimeCDOInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "setJuniorShortfallPausePrice",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setMaxClaimGrowthBps",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -451,6 +487,8 @@ export interface PrimeCDO extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  MAX_CLAIM_GROWTH_BPS_LIMIT: TypedContractMethod<[], [bigint], "view">;
+
   PRECISION: TypedContractMethod<[], [bigint], "view">;
 
   acceptOwnership: TypedContractMethod<[], [void], "nonpayable">;
@@ -522,7 +560,15 @@ export interface PrimeCDO extends BaseContract {
 
   s_juniorShortfallPausePrice: TypedContractMethod<[], [bigint], "view">;
 
+  s_maxClaimGrowthBps: TypedContractMethod<[], [bigint], "view">;
+
   s_minCoverageForDeposit: TypedContractMethod<[], [bigint], "view">;
+
+  s_sharesLockBaseSnapshot: TypedContractMethod<
+    [arg0: BigNumberish],
+    [bigint],
+    "view"
+  >;
 
   s_shortfallPaused: TypedContractMethod<[], [boolean], "view">;
 
@@ -538,6 +584,12 @@ export interface PrimeCDO extends BaseContract {
 
   setJuniorShortfallPausePrice: TypedContractMethod<
     [price: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setMaxClaimGrowthBps: TypedContractMethod<
+    [bps: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -564,6 +616,9 @@ export interface PrimeCDO extends BaseContract {
     key: string | FunctionFragment
   ): T;
 
+  getFunction(
+    nameOrSignature: "MAX_CLAIM_GROWTH_BPS_LIMIT"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "PRECISION"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -649,8 +704,14 @@ export interface PrimeCDO extends BaseContract {
     nameOrSignature: "s_juniorShortfallPausePrice"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
+    nameOrSignature: "s_maxClaimGrowthBps"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
     nameOrSignature: "s_minCoverageForDeposit"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "s_sharesLockBaseSnapshot"
+  ): TypedContractMethod<[arg0: BigNumberish], [bigint], "view">;
   getFunction(
     nameOrSignature: "s_shortfallPaused"
   ): TypedContractMethod<[], [boolean], "view">;
@@ -666,6 +727,9 @@ export interface PrimeCDO extends BaseContract {
   getFunction(
     nameOrSignature: "setJuniorShortfallPausePrice"
   ): TypedContractMethod<[price: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setMaxClaimGrowthBps"
+  ): TypedContractMethod<[bps: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setMinCoverageForDeposit"
   ): TypedContractMethod<[minCoverage: BigNumberish], [void], "nonpayable">;

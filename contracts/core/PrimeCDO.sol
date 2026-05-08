@@ -74,6 +74,24 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
     address public s_guardian;
 
     // ═══════════════════════════════════════════════════════════════════
+    //  STATE — SHARES_LOCK claim cap (audit M#1)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice Per-request snapshot of baseAmount at SHARES_LOCK request time.
+     * @dev Audit M#1 mitigation: caps claimSharesWithdraw at snapshot × (1 + s_maxClaimGrowthBps/10000)
+     *      to prevent attacker from inflating sUSDai rate before claim and extracting more than fair share.
+     *      Yield accrual during cooldown still allowed up to growth cap.
+     */
+    mapping(uint256 => uint256) public s_sharesLockBaseSnapshot;
+
+    /** @notice Max allowed growth between request-time snapshot and claim baseAmount, in BPS. Default 5000 = 50%. */
+    uint256 public s_maxClaimGrowthBps;
+
+    /** @notice Hard cap on max growth setting (200% — beyond this, snapshot loses value). */
+    uint256 public constant MAX_CLAIM_GROWTH_BPS_LIMIT = 20_000;
+
+    // ═══════════════════════════════════════════════════════════════════
     //  EVENTS
     // ═══════════════════════════════════════════════════════════════════
 
@@ -91,6 +109,8 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
     error PrimeVaults__ShortfallPaused();
     error PrimeVaults__CoverageTooLow(uint256 current, uint256 minimum);
     error PrimeVaults__ZeroAmount();
+    error PrimeVaults__InvalidTrancheVault(address vault);
+    error PrimeVaults__GrowthCapTooHigh(uint256 bps);
 
     // ═══════════════════════════════════════════════════════════════════
     //  MODIFIERS
@@ -141,6 +161,7 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         // Defaults
         s_minCoverageForDeposit = 1.05e18; // 105%
         s_juniorShortfallPausePrice = 0.90e18; // 90%
+        s_maxClaimGrowthBps = 5_000; // audit M#1: 50% max growth between SHARES_LOCK request and claim
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -242,7 +263,8 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         } else if (policy.mechanism == RedemptionPolicy.CooldownMechanism.ASSETS_LOCK) {
             result = _withdrawAssetsLock(tranche, netAmount, beneficiary, feeAmount, policy.cooldownDuration);
         } else {
-            result = _withdrawSharesLock(tranche, beneficiary, vaultShares, feeAmount, policy.cooldownDuration);
+            // Pass netAmount as the snapshot baseline — capped on claim by s_maxClaimGrowthBps (audit M#1).
+            result = _withdrawSharesLock(tranche, beneficiary, vaultShares, netAmount, feeAmount, policy.cooldownDuration);
         }
     }
 
@@ -311,6 +333,7 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         TrancheId tranche,
         address beneficiary,
         uint256 vaultShares,
+        uint256 baseAmountSnapshot,
         uint256 feeAmount,
         uint256 cooldownDuration
     ) internal returns (CDOWithdrawResult memory) {
@@ -318,6 +341,10 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         IERC20(vault).safeTransferFrom(msg.sender, address(this), vaultShares);
         IERC20(vault).forceApprove(address(i_sharesCooldown), vaultShares);
         uint256 requestId = i_sharesCooldown.request(beneficiary, vault, vaultShares, cooldownDuration);
+
+        // Audit M#1 fix: snapshot the base amount at request time. claimSharesWithdraw()
+        // caps the claim at snapshot × (1 + s_maxClaimGrowthBps/10000) to defeat rate-pump.
+        s_sharesLockBaseSnapshot[requestId] = baseAmountSnapshot;
 
         // Do NOT recordWithdraw — shares still in totalSupply, TVL unchanged
         return
@@ -362,12 +389,28 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         address vault = req.token;
         TrancheId tranche = s_vaultToTranche[vault];
 
+        // Audit M#2 fix: round-trip check prevents unregistered/legacy vault → SENIOR drain
+        // (default-zero TrancheId would otherwise route arbitrary req.token to SENIOR).
+        if (vault == address(0) || s_tranches[tranche] != vault) {
+            revert PrimeVaults__InvalidTrancheVault(vault);
+        }
+
         _updateAccounting();
         uint256 totalSupply = IERC20(vault).totalSupply();
 
         // 3. Compute base value of shares at current exchange rate
         uint256 baseTVL = i_accounting.getTrancheTVL(tranche);
         uint256 baseAmount = totalSupply > 0 ? (sharesReturned * baseTVL) / totalSupply : 0;
+
+        // Audit M#1 fix (claim-side): cap baseAmount at request-time snapshot × growth factor
+        // to defeat sUSDai rate-pump exploit. Yield accrued during cooldown still allowed up
+        // to s_maxClaimGrowthBps; anything above is treated as manipulation and clamped.
+        uint256 snapshot = s_sharesLockBaseSnapshot[cooldownId];
+        if (snapshot > 0) {
+            uint256 maxAllowed = snapshot + (snapshot * s_maxClaimGrowthBps) / 10_000;
+            if (baseAmount > maxAllowed) baseAmount = maxAllowed;
+            delete s_sharesLockBaseSnapshot[cooldownId];
+        }
 
         // 4. Record withdraw and withdraw from strategy to beneficiary
         i_accounting.recordWithdraw(tranche, baseAmount);
@@ -382,7 +425,17 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
     //  ADMIN
     // ═══════════════════════════════════════════════════════════════════
 
+    /**
+     * @notice Register / rotate the vault for a tranche.
+     * @dev Audit M#3 fix: clear the reverse mapping for the previous vault on rotation
+     *      so stale `s_vaultToTranche[oldVault]` cannot route claims against the new
+     *      tranche's TVL.
+     */
     function registerTranche(TrancheId id, address vault) external onlyOwner {
+        address oldVault = s_tranches[id];
+        if (oldVault != address(0) && oldVault != vault) {
+            delete s_vaultToTranche[oldVault];
+        }
         s_tranches[id] = vault;
         s_vaultToTranche[vault] = id;
         emit TrancheRegistered(id, vault);
@@ -394,6 +447,17 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
 
     function setJuniorShortfallPausePrice(uint256 price) external onlyOwner {
         s_juniorShortfallPausePrice = price;
+    }
+
+    /**
+     * @notice Update the SHARES_LOCK claim growth cap.
+     * @dev Audit M#1: caps claim baseAmount at request-time snapshot × (1 + bps/10000).
+     *      Higher = more permissive (more rate-pump risk); lower = stricter (may clip legitimate yield).
+     *      Bounded by MAX_CLAIM_GROWTH_BPS_LIMIT to keep snapshot meaningful.
+     */
+    function setMaxClaimGrowthBps(uint256 bps) external onlyOwner {
+        if (bps > MAX_CLAIM_GROWTH_BPS_LIMIT) revert PrimeVaults__GrowthCapTooHigh(bps);
+        s_maxClaimGrowthBps = bps;
     }
 
     function unpauseShortfall() external onlyOwnerOrGuardian {
