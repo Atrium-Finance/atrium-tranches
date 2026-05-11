@@ -49,6 +49,7 @@ describe("AprPairFeed", () => {
       await mockPool.getAddress(),
       [USDC, USDT],
       await mockVault.getAddress(),
+      admin.address, // L#3: owner
     );
 
     const FeedFactory = await ethers.getContractFactory("AprPairFeed");
@@ -57,6 +58,9 @@ describe("AprPairFeed", () => {
       await provider.getAddress(),
       STALE_AFTER,
     );
+
+    // L#3: authorize the feed on the provider so updateRoundData() can call getAprPair().
+    await provider.connect(admin).setAprFeed(await feed.getAddress());
 
     KEEPER_ROLE = await feed.KEEPER_ROLE();
     await feed.connect(admin).grantRole(KEEPER_ROLE, keeper.address);
@@ -396,6 +400,7 @@ describe("AprPairFeed", () => {
         await mockPool.getAddress(),
         [USDC, USDT],
         await mockVault.getAddress(),
+        admin.address,
       );
 
       const [prevBefore] = await provider2.s_prevSnapshot();
@@ -411,6 +416,7 @@ describe("AprPairFeed", () => {
         await mockPool.getAddress(),
         [USDC, USDT],
         await mockVault.getAddress(),
+        admin.address,
       );
       await expect(feed.connect(admin).setProvider(await provider2.getAddress())).to.emit(
         feed,

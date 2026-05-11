@@ -70,7 +70,6 @@ export interface ProtocolHealth {
   coverageSenior: bigint;
   minCoverageForDeposit: bigint;
   shortfallPaused: boolean;
-  juniorShortfallPausePrice: bigint;
   strategyTVL: bigint;
 }
 

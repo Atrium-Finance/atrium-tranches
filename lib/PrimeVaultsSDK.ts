@@ -223,7 +223,6 @@ export class PrimeVaultsSDK {
       coverageSenior: h.coverageSenior,
       minCoverageForDeposit: h.minCoverageForDeposit,
       shortfallPaused: h.shortfallPaused,
-      juniorShortfallPausePrice: h.juniorShortfallPausePrice,
       strategyTVL: h.strategyTVL,
     };
   }

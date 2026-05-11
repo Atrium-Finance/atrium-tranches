@@ -86,9 +86,6 @@ async function main() {
   const minCov = await cdo.s_minCoverageForDeposit();
   check("Min coverage = 105%", minCov === 1050000000000000000n, `${hre.ethers.formatEther(minCov)}`);
 
-  const pausePrice = await cdo.s_juniorShortfallPausePrice();
-  check("Shortfall pause = 90%", pausePrice === 900000000000000000n, `${hre.ethers.formatEther(pausePrice)}`);
-
   // ═══════════════════════════════════════════════════════════════════
   //  4. Verify Accounting CDO link
   // ═══════════════════════════════════════════════════════════════════

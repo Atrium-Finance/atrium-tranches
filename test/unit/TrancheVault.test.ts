@@ -88,7 +88,6 @@ describe("TrancheVault — ERC-4626", () => {
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(owner).registerTranche(SENIOR, await seniorVault.getAddress());
     await cdo.connect(owner).registerTranche(JUNIOR, await juniorVault.getAddress());
-    await cdo.connect(owner).setJuniorShortfallPausePrice(0);
 
     // --- Authorize CDO in cooldown contracts ---
     await erc20Cooldown.connect(owner).setAuthorized(await cdo.getAddress(), true);

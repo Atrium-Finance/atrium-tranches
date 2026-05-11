@@ -64,7 +64,6 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
     // ═══════════════════════════════════════════════════════════════════
 
     uint256 public s_minCoverageForDeposit; // 1.05e18
-    uint256 public s_juniorShortfallPausePrice; // 0.90e18
     bool public s_shortfallPaused;
 
     // ═══════════════════════════════════════════════════════════════════
@@ -95,7 +94,6 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
     //  EVENTS
     // ═══════════════════════════════════════════════════════════════════
 
-    event ShortfallPauseTriggered(uint256 pricePerShare, uint256 threshold);
     event ShortfallUnpaused();
     event TrancheRegistered(TrancheId indexed tranche, address vault);
     event GuardianSet(address indexed guardian);
@@ -160,7 +158,6 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
 
         // Defaults
         s_minCoverageForDeposit = 1.05e18; // 105%
-        s_juniorShortfallPausePrice = 0.90e18; // 90%
         s_maxClaimGrowthBps = 5_000; // audit M#1: 50% max growth between SHARES_LOCK request and claim
     }
 
@@ -445,10 +442,6 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         s_minCoverageForDeposit = minCoverage;
     }
 
-    function setJuniorShortfallPausePrice(uint256 price) external onlyOwner {
-        s_juniorShortfallPausePrice = price;
-    }
-
     /**
      * @notice Update the SHARES_LOCK claim growth cap.
      * @dev Audit M#1: caps claim baseAmount at request-time snapshot × (1 + bps/10000).
@@ -508,11 +501,6 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
     function _updateAccounting() internal {
         uint256 strategyTVL = i_strategy.totalAssets();
         i_accounting.updateTVL(strategyTVL);
-
-        // Check shortfall AFTER strategy gain/loss reconciliation but BEFORE any
-        // user-initiated TVL change (deposit/withdraw). This way the check sees
-        // the true post-loss state, not transient mid-withdraw state.
-        _checkJuniorShortfall();
     }
 
     /**
@@ -540,26 +528,4 @@ contract PrimeCDO is Ownable2Step, IPrimeCDO {
         return (vaultShares * freshTVL) / vaultSupply;
     }
 
-    /**
-     * @dev Auto-pause if Junior exchange rate drops below threshold.
-     *      See docs/PV_V3_COVERAGE_GATE.md section 5.
-     */
-    function _checkJuniorShortfall() internal {
-        if (s_juniorShortfallPausePrice == 0) return;
-
-        address juniorVault = s_tranches[TrancheId.JUNIOR];
-        if (juniorVault == address(0)) return;
-
-        uint256 totalAssets = i_accounting.getJuniorTVL();
-        uint256 totalSupply = IERC20(juniorVault).totalSupply();
-
-        if (totalSupply == 0) return;
-
-        uint256 pricePerShare = (totalAssets * PRECISION) / totalSupply;
-
-        if (pricePerShare < s_juniorShortfallPausePrice) {
-            s_shortfallPaused = true;
-            emit ShortfallPauseTriggered(pricePerShare, s_juniorShortfallPausePrice);
-        }
-    }
 }

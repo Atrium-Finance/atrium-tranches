@@ -84,7 +84,6 @@ describe("PrimeLens — Read-only aggregator", () => {
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(owner).registerTranche(SENIOR, await seniorVault.getAddress());
     await cdo.connect(owner).registerTranche(JUNIOR, await juniorVault.getAddress());
-    await cdo.connect(owner).setJuniorShortfallPausePrice(0);
     await erc20Cooldown.connect(owner).setAuthorized(await cdo.getAddress(), true);
     await sharesCooldown.connect(owner).setAuthorized(await cdo.getAddress(), true);
 
@@ -183,24 +182,8 @@ describe("PrimeLens — Read-only aggregator", () => {
     });
 
     it("should reflect shortfall pause state", async () => {
-      // Set pause price to max so any check triggers pause
-      await cdo.connect(owner).setJuniorShortfallPausePrice(ethers.MaxUint256);
-
-      // Create a mock Jr vault token for shortfall check
-      const TokenFactory = await ethers.getContractFactory("MockBaseAsset");
-      const mockJrVault = await TokenFactory.deploy("pvJR", "pvJR");
-      await cdo.connect(owner).registerTranche(JUNIOR, await mockJrVault.getAddress());
-      await mockJrVault.mint(alice.address, 10_000n * E18);
-
-      // Trigger any action to check shortfall
-      await mockUSDai.mint(alice.address, 100_000n * E18);
-      const srVaultAddr = await seniorVault.getAddress();
-      await mockUSDai.connect(alice).approve(srVaultAddr, ethers.MaxUint256);
-      try { await seniorVault.connect(alice).deposit(100n * E18, alice.address); } catch {}
-
-      // Re-register original jr vault for lens
-      await cdo.connect(owner).registerTranche(JUNIOR, await juniorVault.getAddress());
-
+      await cdo.connect(owner).setGuardian(owner.address);
+      await cdo.connect(owner).triggerShortfallPause();
       const health = await lens.getProtocolHealth();
       expect(health.shortfallPaused).to.be.true;
     });

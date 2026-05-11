@@ -26,7 +26,6 @@ interface IPrimeCDOLens {
     function i_sharesCooldown() external view returns (ICooldownHandler);
     function s_tranches(TrancheId id) external view returns (address);
     function s_minCoverageForDeposit() external view returns (uint256);
-    function s_juniorShortfallPausePrice() external view returns (uint256);
     function s_shortfallPaused() external view returns (bool);
 }
 
@@ -93,7 +92,6 @@ contract PrimeLens {
         uint256 coverageSenior; // cs = (Sr+Jr)/Sr
         uint256 minCoverageForDeposit;
         bool shortfallPaused;
-        uint256 juniorShortfallPausePrice;
         uint256 strategyTVL;
     }
 
@@ -189,7 +187,6 @@ contract PrimeLens {
 
         health.minCoverageForDeposit = i_cdo.s_minCoverageForDeposit();
         health.shortfallPaused = i_cdo.s_shortfallPaused();
-        health.juniorShortfallPausePrice = i_cdo.s_juniorShortfallPausePrice();
         health.strategyTVL = i_strategy.totalAssets();
     }
 

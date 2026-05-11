@@ -9,6 +9,7 @@ import type {
   Result,
   Interface,
   EventFragment,
+  AddressLike,
   ContractRunner,
   ContractMethod,
   Listener,
@@ -25,18 +26,35 @@ import type {
 export interface SUSDaiAprPairProviderInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "acceptOwnership"
       | "benchmarkTokenCount"
       | "getAprPair"
       | "getAprPairView"
       | "i_aavePool"
       | "i_vault"
+      | "owner"
+      | "pendingOwner"
+      | "renounceOwnership"
+      | "s_aprFeed"
       | "s_benchmarkTokens"
       | "s_latestSnapshot"
       | "s_prevSnapshot"
+      | "setAprFeed"
+      | "transferOwnership"
   ): FunctionFragment;
 
-  getEvent(nameOrSignatureOrTopic: "SnapshotShifted"): EventFragment;
+  getEvent(
+    nameOrSignatureOrTopic:
+      | "AprFeedSet"
+      | "OwnershipTransferStarted"
+      | "OwnershipTransferred"
+      | "SnapshotShifted"
+  ): EventFragment;
 
+  encodeFunctionData(
+    functionFragment: "acceptOwnership",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "benchmarkTokenCount",
     values?: undefined
@@ -54,6 +72,16 @@ export interface SUSDaiAprPairProviderInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(functionFragment: "i_vault", values?: undefined): string;
+  encodeFunctionData(functionFragment: "owner", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "pendingOwner",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "renounceOwnership",
+    values?: undefined
+  ): string;
+  encodeFunctionData(functionFragment: "s_aprFeed", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "s_benchmarkTokens",
     values: [BigNumberish]
@@ -66,7 +94,19 @@ export interface SUSDaiAprPairProviderInterface extends Interface {
     functionFragment: "s_prevSnapshot",
     values?: undefined
   ): string;
+  encodeFunctionData(
+    functionFragment: "setAprFeed",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "transferOwnership",
+    values: [AddressLike]
+  ): string;
 
+  decodeFunctionResult(
+    functionFragment: "acceptOwnership",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "benchmarkTokenCount",
     data: BytesLike
@@ -78,6 +118,16 @@ export interface SUSDaiAprPairProviderInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "i_aavePool", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "i_vault", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "pendingOwner",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "renounceOwnership",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "s_aprFeed", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "s_benchmarkTokens",
     data: BytesLike
@@ -90,6 +140,49 @@ export interface SUSDaiAprPairProviderInterface extends Interface {
     functionFragment: "s_prevSnapshot",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "setAprFeed", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "transferOwnership",
+    data: BytesLike
+  ): Result;
+}
+
+export namespace AprFeedSetEvent {
+  export type InputTuple = [aprFeed: AddressLike];
+  export type OutputTuple = [aprFeed: string];
+  export interface OutputObject {
+    aprFeed: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace OwnershipTransferStartedEvent {
+  export type InputTuple = [previousOwner: AddressLike, newOwner: AddressLike];
+  export type OutputTuple = [previousOwner: string, newOwner: string];
+  export interface OutputObject {
+    previousOwner: string;
+    newOwner: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace OwnershipTransferredEvent {
+  export type InputTuple = [previousOwner: AddressLike, newOwner: AddressLike];
+  export type OutputTuple = [previousOwner: string, newOwner: string];
+  export interface OutputObject {
+    previousOwner: string;
+    newOwner: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace SnapshotShiftedEvent {
@@ -157,6 +250,8 @@ export interface SUSDaiAprPairProvider extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  acceptOwnership: TypedContractMethod<[], [void], "nonpayable">;
+
   benchmarkTokenCount: TypedContractMethod<[], [bigint], "view">;
 
   getAprPair: TypedContractMethod<
@@ -187,6 +282,14 @@ export interface SUSDaiAprPairProvider extends BaseContract {
 
   i_vault: TypedContractMethod<[], [string], "view">;
 
+  owner: TypedContractMethod<[], [string], "view">;
+
+  pendingOwner: TypedContractMethod<[], [string], "view">;
+
+  renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
+
+  s_aprFeed: TypedContractMethod<[], [string], "view">;
+
   s_benchmarkTokens: TypedContractMethod<
     [arg0: BigNumberish],
     [string],
@@ -205,10 +308,25 @@ export interface SUSDaiAprPairProvider extends BaseContract {
     "view"
   >;
 
+  setAprFeed: TypedContractMethod<
+    [aprFeed_: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  transferOwnership: TypedContractMethod<
+    [newOwner: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
 
+  getFunction(
+    nameOrSignature: "acceptOwnership"
+  ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "benchmarkTokenCount"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -245,6 +363,18 @@ export interface SUSDaiAprPairProvider extends BaseContract {
     nameOrSignature: "i_vault"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
+    nameOrSignature: "owner"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "pendingOwner"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "renounceOwnership"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "s_aprFeed"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "s_benchmarkTokens"
   ): TypedContractMethod<[arg0: BigNumberish], [string], "view">;
   getFunction(
@@ -261,7 +391,34 @@ export interface SUSDaiAprPairProvider extends BaseContract {
     [[bigint, bigint] & { rate: bigint; timestamp: bigint }],
     "view"
   >;
+  getFunction(
+    nameOrSignature: "setAprFeed"
+  ): TypedContractMethod<[aprFeed_: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "transferOwnership"
+  ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
 
+  getEvent(
+    key: "AprFeedSet"
+  ): TypedContractEvent<
+    AprFeedSetEvent.InputTuple,
+    AprFeedSetEvent.OutputTuple,
+    AprFeedSetEvent.OutputObject
+  >;
+  getEvent(
+    key: "OwnershipTransferStarted"
+  ): TypedContractEvent<
+    OwnershipTransferStartedEvent.InputTuple,
+    OwnershipTransferStartedEvent.OutputTuple,
+    OwnershipTransferStartedEvent.OutputObject
+  >;
+  getEvent(
+    key: "OwnershipTransferred"
+  ): TypedContractEvent<
+    OwnershipTransferredEvent.InputTuple,
+    OwnershipTransferredEvent.OutputTuple,
+    OwnershipTransferredEvent.OutputObject
+  >;
   getEvent(
     key: "SnapshotShifted"
   ): TypedContractEvent<
@@ -271,6 +428,39 @@ export interface SUSDaiAprPairProvider extends BaseContract {
   >;
 
   filters: {
+    "AprFeedSet(address)": TypedContractEvent<
+      AprFeedSetEvent.InputTuple,
+      AprFeedSetEvent.OutputTuple,
+      AprFeedSetEvent.OutputObject
+    >;
+    AprFeedSet: TypedContractEvent<
+      AprFeedSetEvent.InputTuple,
+      AprFeedSetEvent.OutputTuple,
+      AprFeedSetEvent.OutputObject
+    >;
+
+    "OwnershipTransferStarted(address,address)": TypedContractEvent<
+      OwnershipTransferStartedEvent.InputTuple,
+      OwnershipTransferStartedEvent.OutputTuple,
+      OwnershipTransferStartedEvent.OutputObject
+    >;
+    OwnershipTransferStarted: TypedContractEvent<
+      OwnershipTransferStartedEvent.InputTuple,
+      OwnershipTransferStartedEvent.OutputTuple,
+      OwnershipTransferStartedEvent.OutputObject
+    >;
+
+    "OwnershipTransferred(address,address)": TypedContractEvent<
+      OwnershipTransferredEvent.InputTuple,
+      OwnershipTransferredEvent.OutputTuple,
+      OwnershipTransferredEvent.OutputObject
+    >;
+    OwnershipTransferred: TypedContractEvent<
+      OwnershipTransferredEvent.InputTuple,
+      OwnershipTransferredEvent.OutputTuple,
+      OwnershipTransferredEvent.OutputObject
+    >;
+
     "SnapshotShifted(uint256,uint256,uint256)": TypedContractEvent<
       SnapshotShiftedEvent.InputTuple,
       SnapshotShiftedEvent.OutputTuple,

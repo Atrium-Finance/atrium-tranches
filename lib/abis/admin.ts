@@ -11,13 +11,6 @@ export const PRIME_CDO_ADMIN_ABI = [
   },
   {
     inputs: [],
-    name: "s_juniorShortfallPausePrice",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
     name: "s_shortfallPaused",
     outputs: [{ name: "", type: "bool" }],
     stateMutability: "view",
@@ -55,13 +48,6 @@ export const PRIME_CDO_ADMIN_ABI = [
   {
     inputs: [{ name: "minCoverage", type: "uint256" }],
     name: "setMinCoverageForDeposit",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ name: "price", type: "uint256" }],
-    name: "setJuniorShortfallPausePrice",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",
@@ -105,15 +91,6 @@ export const PRIME_CDO_ADMIN_ABI = [
   // ═══════════════════════════════════════════════════════════════════
   //  EVENTS
   // ═══════════════════════════════════════════════════════════════════
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: false, name: "pricePerShare", type: "uint256" },
-      { indexed: false, name: "threshold", type: "uint256" },
-    ],
-    name: "ShortfallPauseTriggered",
-    type: "event",
-  },
   {
     anonymous: false,
     inputs: [],

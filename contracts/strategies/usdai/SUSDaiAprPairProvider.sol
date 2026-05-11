@@ -9,6 +9,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {IStrategyAprPairProvider} from "../../interfaces/IAprPairFeed.sol";
 
 /**
@@ -46,7 +47,7 @@ interface IAavePool {
  *      #4 Strategy APR clamped to [APR_MIN, APR_MAX] before int64 cast
  *      Returns int64 × 12 decimals. 1% = 1e10.
  */
-contract SUSDaiAprPairProvider is IStrategyAprPairProvider {
+contract SUSDaiAprPairProvider is IStrategyAprPairProvider, Ownable2Step {
     // ═══════════════════════════════════════════════════════════════════
     //  TYPES
     // ═══════════════════════════════════════════════════════════════════
@@ -82,12 +83,26 @@ contract SUSDaiAprPairProvider is IStrategyAprPairProvider {
     address[] public s_benchmarkTokens;
     RateSnapshot public s_prevSnapshot;
     RateSnapshot public s_latestSnapshot;
+    /**
+     * @notice The AprPairFeed authorized to call getAprPair() (state-mutating).
+     * @dev Audit L#3 fix: getAprPair was previously permissionless — anyone could spam-call
+     *      to compress deltaT and zero out aprBase. Restrict to the registered feed.
+     */
+    address public s_aprFeed;
 
     // ═══════════════════════════════════════════════════════════════════
     //  EVENTS
     // ═══════════════════════════════════════════════════════════════════
 
     event SnapshotShifted(uint256 prevRate, uint256 newRate, uint256 timestamp);
+    event AprFeedSet(address indexed aprFeed);
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  ERRORS
+    // ═══════════════════════════════════════════════════════════════════
+
+    error PrimeVaults__Unauthorized(address caller);
+    error PrimeVaults__ZeroAddress();
 
     // ═══════════════════════════════════════════════════════════════════
     //  CONSTRUCTOR
@@ -97,8 +112,9 @@ contract SUSDaiAprPairProvider is IStrategyAprPairProvider {
      * @param aavePool_ Aave v3 Pool address
      * @param benchmarkTokens_ Array of underlying tokens for benchmark (e.g., [USDC, USDT])
      * @param vault_ ERC-4626 vault address (e.g., sUSDai)
+     * @param owner_ Initial owner with rights to set AprPairFeed authorization
      */
-    constructor(address aavePool_, address[] memory benchmarkTokens_, address vault_) {
+    constructor(address aavePool_, address[] memory benchmarkTokens_, address vault_, address owner_) Ownable(owner_) {
         i_aavePool = IAavePool(aavePool_);
         i_vault = IERC4626(vault_);
 
@@ -112,6 +128,21 @@ contract SUSDaiAprPairProvider is IStrategyAprPairProvider {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    //  ADMIN
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice Authorize the AprPairFeed to call getAprPair().
+     * @dev Must be called after deploy with the deployed AprPairFeed address.
+     *      Until set, getAprPair() reverts (defense against snapshot-shifting spam).
+     */
+    function setAprFeed(address aprFeed_) external onlyOwner {
+        if (aprFeed_ == address(0)) revert PrimeVaults__ZeroAddress();
+        s_aprFeed = aprFeed_;
+        emit AprFeedSet(aprFeed_);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     //  getAprPair — STATE-CHANGING (shifts snapshots)
     // ═══════════════════════════════════════════════════════════════════
 
@@ -120,6 +151,9 @@ contract SUSDaiAprPairProvider is IStrategyAprPairProvider {
      * @dev Shifts prev ← latest, latest ← current live rate.
      */
     function getAprPair() external override returns (int64 aprTarget, int64 aprBase, uint64 timestamp) {
+        // Audit L#3 fix: only the registered AprPairFeed may shift snapshots.
+        if (msg.sender != s_aprFeed) revert PrimeVaults__Unauthorized(msg.sender);
+
         aprTarget = _computeBenchmarkApr();
 
         // Shift snapshots
@@ -174,7 +208,10 @@ contract SUSDaiAprPairProvider is IStrategyAprPairProvider {
         if (totalWeight == 0) return 0;
 
         uint256 aprAvg = weightedSum / totalWeight;
-        require(aprAvg >= BENCHMARK_MIN && aprAvg <= BENCHMARK_MAX, "PrimeVaults__InvalidBenchmarkApr");
+        // Audit L#7 fix: clamp instead of revert — Senior keeps floor during Aave APR spikes
+        // (USDT depeg, liquidation cascade) instead of losing the benchmark entirely.
+        // BENCHMARK_MIN = 0 and aprAvg is uint256 so lower bound auto-holds.
+        if (aprAvg > BENCHMARK_MAX) aprAvg = BENCHMARK_MAX;
 
         return int64(int256(aprAvg));
     }

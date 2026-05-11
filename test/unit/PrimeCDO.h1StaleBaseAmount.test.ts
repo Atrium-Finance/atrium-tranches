@@ -91,7 +91,6 @@ describe("PrimeCDO — H#1 stale baseAmount race", () => {
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(owner).registerTranche(SENIOR, await seniorVault.getAddress());
     await cdo.connect(owner).registerTranche(JUNIOR, await juniorVault.getAddress());
-    await cdo.connect(owner).setJuniorShortfallPausePrice(0); // disable auto-pause for the test
 
     await erc20Cooldown.connect(owner).setAuthorized(await cdo.getAddress(), true);
     await sharesCooldown.connect(owner).setAuthorized(await cdo.getAddress(), true);

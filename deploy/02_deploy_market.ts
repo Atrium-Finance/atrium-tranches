@@ -31,8 +31,9 @@ async function main() {
   const ProviderFactory = await hre.ethers.getContractFactory("SUSDaiAprPairProvider");
   const aprProvider = await ProviderFactory.deploy(
     ARBITRUM.AAVE_V3_POOL,
-    [...AAVE_BENCHMARK_TOKENS], // USDC + USDT + DAI on Arbitrum
+    [...AAVE_BENCHMARK_TOKENS], // USDC + USDT on Arbitrum
     ARBITRUM.SUSDAI,
+    deployer.address, // owner (audit L#3)
   );
   await aprProvider.waitForDeployment();
   const aprProviderAddr = await aprProvider.getAddress();
@@ -47,6 +48,10 @@ async function main() {
   await aprFeed.waitForDeployment();
   const aprFeedAddr = await aprFeed.getAddress();
   console.log(`  AprPairFeed:       ${aprFeedAddr}`);
+
+  // Audit L#3: authorize the feed on the provider so getAprPair() can be called.
+  await (await aprProvider.setAprFeed(aprFeedAddr)).wait();
+  console.log(`  ✓ AprProvider.setAprFeed(${aprFeedAddr})`);
 
   // ═══════════════════════════════════════════════════════════════════
   //  3. Accounting

@@ -143,10 +143,6 @@ describe("Governance — Guardian role", () => {
       await expect(cdo.connect(guardian).setMinCoverageForDeposit(2n * E18)).to.be.reverted;
     });
 
-    it("should revert when guardian calls setJuniorShortfallPausePrice", async () => {
-      await expect(cdo.connect(guardian).setJuniorShortfallPausePrice(0)).to.be.reverted;
-    });
-
     it("should revert when guardian calls registerTranche", async () => {
       await expect(cdo.connect(guardian).registerTranche(SENIOR, other.address)).to.be.reverted;
     });

@@ -45,7 +45,10 @@ describe("SUSDaiAprPairProvider", () => {
       await mockPool.getAddress(),
       [USDC, USDT],
       await mockVault.getAddress(),
+      owner.address, // L#3: owner sets the AprPairFeed authorization
     );
+    // L#3: tests call getAprPair() directly from `owner` signer; authorize owner as feed proxy.
+    await provider.connect(owner).setAprFeed(owner.address);
   }
 
   beforeEach(deployFresh);

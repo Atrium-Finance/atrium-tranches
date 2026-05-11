@@ -28,7 +28,6 @@ export interface IPrimeCDOLensInterface extends Interface {
       | "i_redemptionPolicy"
       | "i_sharesCooldown"
       | "i_strategy"
-      | "s_juniorShortfallPausePrice"
       | "s_minCoverageForDeposit"
       | "s_shortfallPaused"
       | "s_tranches"
@@ -52,10 +51,6 @@ export interface IPrimeCDOLensInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "i_strategy",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "s_juniorShortfallPausePrice",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -88,10 +83,6 @@ export interface IPrimeCDOLensInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "i_strategy", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "s_juniorShortfallPausePrice",
-    data: BytesLike
-  ): Result;
   decodeFunctionResult(
     functionFragment: "s_minCoverageForDeposit",
     data: BytesLike
@@ -156,8 +147,6 @@ export interface IPrimeCDOLens extends BaseContract {
 
   i_strategy: TypedContractMethod<[], [string], "view">;
 
-  s_juniorShortfallPausePrice: TypedContractMethod<[], [bigint], "view">;
-
   s_minCoverageForDeposit: TypedContractMethod<[], [bigint], "view">;
 
   s_shortfallPaused: TypedContractMethod<[], [boolean], "view">;
@@ -183,9 +172,6 @@ export interface IPrimeCDOLens extends BaseContract {
   getFunction(
     nameOrSignature: "i_strategy"
   ): TypedContractMethod<[], [string], "view">;
-  getFunction(
-    nameOrSignature: "s_juniorShortfallPausePrice"
-  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "s_minCoverageForDeposit"
   ): TypedContractMethod<[], [bigint], "view">;

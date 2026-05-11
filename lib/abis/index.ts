@@ -71,7 +71,6 @@ export const PRIME_LENS_ABI = [
           { name: "coverageSenior", type: "uint256" },
           { name: "minCoverageForDeposit", type: "uint256" },
           { name: "shortfallPaused", type: "bool" },
-          { name: "juniorShortfallPausePrice", type: "uint256" },
           { name: "strategyTVL", type: "uint256" },
         ],
         name: "health",

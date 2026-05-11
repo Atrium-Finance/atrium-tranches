@@ -19,7 +19,6 @@ export const AAVE_BENCHMARK_TOKENS = [ARBITRUM.USDC, ARBITRUM.USDT] as const;
  */
 export const DEFAULTS = {
   MIN_COVERAGE_DEPOSIT: BigInt("1050000000000000000"), // 1.05e18 = 105%
-  SHORTFALL_PAUSE_PRICE: BigInt("900000000000000000"), // 0.90e18 = 90%
   APR_STALE_AFTER: 30 * 86_400, // 30 days
   PRIMELOCK_DELAY: 24 * 3_600, // 24 hours — governance delay (hardcoded in PrimeLock.sol)
 } as const;

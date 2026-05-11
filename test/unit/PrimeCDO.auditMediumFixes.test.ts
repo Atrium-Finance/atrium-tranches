@@ -77,7 +77,6 @@ describe("PrimeCDO — Audit medium fixes (M#1, M#2, M#3)", () => {
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(owner).registerTranche(SENIOR, await seniorVault.getAddress());
     await cdo.connect(owner).registerTranche(JUNIOR, await juniorVault.getAddress());
-    await cdo.connect(owner).setJuniorShortfallPausePrice(0);
 
     await erc20Cooldown.connect(owner).setAuthorized(await cdo.getAddress(), true);
     await sharesCooldown.connect(owner).setAuthorized(await cdo.getAddress(), true);

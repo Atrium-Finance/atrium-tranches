@@ -88,7 +88,6 @@ describe("PrimeCDO — Withdrawals", () => {
     await accounting.setCDO(await cdo.getAddress());
     await cdo.connect(owner).registerTranche(SENIOR, seniorVault.address);
     await cdo.connect(owner).registerTranche(JUNIOR, juniorVault.address);
-    await cdo.connect(owner).setJuniorShortfallPausePrice(0); // disable for tests
 
     // Authorize CDO in cooldown contracts
     await erc20Cooldown.connect(owner).setAuthorized(await cdo.getAddress(), true);
@@ -261,8 +260,8 @@ describe("PrimeCDO — Withdrawals", () => {
       await cdo.connect(owner).registerTranche(JUNIOR, await mockJrVault.getAddress());
       await mockJrVault.mint(beneficiary.address, 10_000n * E18);
 
-      await cdo.connect(owner).setJuniorShortfallPausePrice(ethers.MaxUint256);
-      try { await cdo.connect(seniorVault).deposit(SENIOR, await mockUSDai.getAddress(), 100n * E18); } catch {}
+      await cdo.connect(owner).setGuardian(owner.address);
+      await cdo.connect(owner).triggerShortfallPause();
       expect(await cdo.s_shortfallPaused()).to.be.true;
 
       await expect(
@@ -278,8 +277,8 @@ describe("PrimeCDO — Withdrawals", () => {
       await cdo.connect(owner).registerTranche(JUNIOR, mockJrVaultAddr);
       await mockJrVault.mint(beneficiary.address, 10_000n * E18);
 
-      await cdo.connect(owner).setJuniorShortfallPausePrice(ethers.MaxUint256);
-      try { await cdo.connect(seniorVault).deposit(SENIOR, await mockUSDai.getAddress(), 100n * E18); } catch {}
+      await cdo.connect(owner).setGuardian(owner.address);
+      await cdo.connect(owner).triggerShortfallPause();
       expect(await cdo.s_shortfallPaused()).to.be.true;
 
       // Must call from the registered Junior vault

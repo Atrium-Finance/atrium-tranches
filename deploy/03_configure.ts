@@ -93,9 +93,6 @@ async function main() {
   await (await cdo.setMinCoverageForDeposit(DEFAULTS.MIN_COVERAGE_DEPOSIT)).wait();
   console.log(`  ✓ CDO.setMinCoverageForDeposit(105%)`);
 
-  await (await cdo.setJuniorShortfallPausePrice(DEFAULTS.SHORTFALL_PAUSE_PRICE)).wait();
-  console.log(`  ✓ CDO.setJuniorShortfallPausePrice(90%)`);
-
   // ═══════════════════════════════════════════════════════════════════
   //  5. Grant KEEPER_ROLE on AprPairFeed (skip if already granted)
   // ═══════════════════════════════════════════════════════════════════

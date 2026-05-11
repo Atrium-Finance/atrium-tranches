@@ -96,7 +96,6 @@ export declare namespace PrimeLens {
     coverageSenior: BigNumberish;
     minCoverageForDeposit: BigNumberish;
     shortfallPaused: boolean;
-    juniorShortfallPausePrice: BigNumberish;
     strategyTVL: BigNumberish;
   };
 
@@ -109,7 +108,6 @@ export declare namespace PrimeLens {
     coverageSenior: bigint,
     minCoverageForDeposit: bigint,
     shortfallPaused: boolean,
-    juniorShortfallPausePrice: bigint,
     strategyTVL: bigint
   ] & {
     seniorTVL: bigint;
@@ -120,7 +118,6 @@ export declare namespace PrimeLens {
     coverageSenior: bigint;
     minCoverageForDeposit: bigint;
     shortfallPaused: boolean;
-    juniorShortfallPausePrice: bigint;
     strategyTVL: bigint;
   };
 

@@ -30,11 +30,16 @@ async function main() {
     ARBITRUM.AAVE_V3_POOL,
     [...AAVE_BENCHMARK_TOKENS],
     ARBITRUM.SUSDAI,
+    deployer.address, // owner (audit L#3)
   );
   await newProvider.waitForDeployment();
   const newProviderAddr = await newProvider.getAddress();
   console.log(`  New AprProvider:  ${newProviderAddr}`);
   console.log(`  Old AprProvider:  ${deployed.aprProvider}`);
+
+  // Audit L#3: authorize the existing feed on the new provider before swapping.
+  await (await newProvider.setAprFeed(deployed.aprFeed)).wait();
+  console.log(`  ✓ NewAprProvider.setAprFeed(${deployed.aprFeed})`);
 
   // ═══════════════════════════════════════════════════════════════════
   //  2. Call AprPairFeed.setProvider(newProvider)

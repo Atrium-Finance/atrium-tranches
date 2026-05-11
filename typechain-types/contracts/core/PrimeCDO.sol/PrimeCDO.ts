@@ -75,7 +75,6 @@ export interface PrimeCDOInterface extends Interface {
       | "renounceOwnership"
       | "requestWithdraw"
       | "s_guardian"
-      | "s_juniorShortfallPausePrice"
       | "s_maxClaimGrowthBps"
       | "s_minCoverageForDeposit"
       | "s_sharesLockBaseSnapshot"
@@ -83,7 +82,6 @@ export interface PrimeCDOInterface extends Interface {
       | "s_tranches"
       | "s_vaultToTranche"
       | "setGuardian"
-      | "setJuniorShortfallPausePrice"
       | "setMaxClaimGrowthBps"
       | "setMinCoverageForDeposit"
       | "strategy"
@@ -98,7 +96,6 @@ export interface PrimeCDOInterface extends Interface {
       | "GuardianSet"
       | "OwnershipTransferStarted"
       | "OwnershipTransferred"
-      | "ShortfallPauseTriggered"
       | "ShortfallUnpaused"
       | "TrancheRegistered"
   ): EventFragment;
@@ -179,10 +176,6 @@ export interface PrimeCDOInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "s_juniorShortfallPausePrice",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "s_maxClaimGrowthBps",
     values?: undefined
   ): string;
@@ -209,10 +202,6 @@ export interface PrimeCDOInterface extends Interface {
   encodeFunctionData(
     functionFragment: "setGuardian",
     values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "setJuniorShortfallPausePrice",
-    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "setMaxClaimGrowthBps",
@@ -300,10 +289,6 @@ export interface PrimeCDOInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "s_guardian", data: BytesLike): Result;
   decodeFunctionResult(
-    functionFragment: "s_juniorShortfallPausePrice",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "s_maxClaimGrowthBps",
     data: BytesLike
   ): Result;
@@ -326,10 +311,6 @@ export interface PrimeCDOInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "setGuardian",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "setJuniorShortfallPausePrice",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -398,22 +379,6 @@ export namespace OwnershipTransferredEvent {
   export interface OutputObject {
     previousOwner: string;
     newOwner: string;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
-export namespace ShortfallPauseTriggeredEvent {
-  export type InputTuple = [
-    pricePerShare: BigNumberish,
-    threshold: BigNumberish
-  ];
-  export type OutputTuple = [pricePerShare: bigint, threshold: bigint];
-  export interface OutputObject {
-    pricePerShare: bigint;
-    threshold: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -558,8 +523,6 @@ export interface PrimeCDO extends BaseContract {
 
   s_guardian: TypedContractMethod<[], [string], "view">;
 
-  s_juniorShortfallPausePrice: TypedContractMethod<[], [bigint], "view">;
-
   s_maxClaimGrowthBps: TypedContractMethod<[], [bigint], "view">;
 
   s_minCoverageForDeposit: TypedContractMethod<[], [bigint], "view">;
@@ -578,12 +541,6 @@ export interface PrimeCDO extends BaseContract {
 
   setGuardian: TypedContractMethod<
     [guardian_: AddressLike],
-    [void],
-    "nonpayable"
-  >;
-
-  setJuniorShortfallPausePrice: TypedContractMethod<
-    [price: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -701,9 +658,6 @@ export interface PrimeCDO extends BaseContract {
     nameOrSignature: "s_guardian"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
-    nameOrSignature: "s_juniorShortfallPausePrice"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
     nameOrSignature: "s_maxClaimGrowthBps"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -724,9 +678,6 @@ export interface PrimeCDO extends BaseContract {
   getFunction(
     nameOrSignature: "setGuardian"
   ): TypedContractMethod<[guardian_: AddressLike], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "setJuniorShortfallPausePrice"
-  ): TypedContractMethod<[price: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setMaxClaimGrowthBps"
   ): TypedContractMethod<[bps: BigNumberish], [void], "nonpayable">;
@@ -773,13 +724,6 @@ export interface PrimeCDO extends BaseContract {
     OwnershipTransferredEvent.InputTuple,
     OwnershipTransferredEvent.OutputTuple,
     OwnershipTransferredEvent.OutputObject
-  >;
-  getEvent(
-    key: "ShortfallPauseTriggered"
-  ): TypedContractEvent<
-    ShortfallPauseTriggeredEvent.InputTuple,
-    ShortfallPauseTriggeredEvent.OutputTuple,
-    ShortfallPauseTriggeredEvent.OutputObject
   >;
   getEvent(
     key: "ShortfallUnpaused"
@@ -839,17 +783,6 @@ export interface PrimeCDO extends BaseContract {
       OwnershipTransferredEvent.InputTuple,
       OwnershipTransferredEvent.OutputTuple,
       OwnershipTransferredEvent.OutputObject
-    >;
-
-    "ShortfallPauseTriggered(uint256,uint256)": TypedContractEvent<
-      ShortfallPauseTriggeredEvent.InputTuple,
-      ShortfallPauseTriggeredEvent.OutputTuple,
-      ShortfallPauseTriggeredEvent.OutputObject
-    >;
-    ShortfallPauseTriggered: TypedContractEvent<
-      ShortfallPauseTriggeredEvent.InputTuple,
-      ShortfallPauseTriggeredEvent.OutputTuple,
-      ShortfallPauseTriggeredEvent.OutputObject
     >;
 
     "ShortfallUnpaused()": TypedContractEvent<
