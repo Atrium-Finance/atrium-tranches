@@ -2,8 +2,11 @@
  * Withdraw flow — request withdraw, claim cooldowns.
  *
  * Usage:
- *   # Request withdraw (any tranche):
+ *   # Request withdraw (specific shares):
  *   npx tsx lib/scripts/withdraw-flow.ts --tranche SENIOR --shares 100
+ *
+ *   # Request withdraw ALL of user's shares in a tranche:
+ *   npx tsx lib/scripts/withdraw-flow.ts --tranche JUNIOR --all
  *
  *   # Claim ERC20Cooldown (ASSETS_LOCK — sUSDai):
  *   npx tsx lib/scripts/withdraw-flow.ts --claim --cooldown-id 1 --tranche SENIOR
@@ -34,23 +37,40 @@ const MECHANISM_NAMES: Record<number, string> = {
 async function requestWithdraw() {
   const args = process.argv.slice(2);
   const tranche = parseTranche(parseFlag(args, "--tranche") ?? "SENIOR");
-  const shares = parseFlag(args, "--shares") ?? "1";
+  const all = hasFlag(args, "--all");
+  const sharesArg = parseFlag(args, "--shares");
   const dryRun = hasFlag(args, "--dry-run");
 
-  // parseTranche already validates
+  // Validate input — either --all or --shares must be specified
+  if (!all && !sharesArg) {
+    throw new Error("Provide either --shares <amount> or --all");
+  }
+  if (all && sharesArg) {
+    throw new Error("Use either --shares or --all, not both");
+  }
 
   const { sdk, publicClient, addresses } = createSDK();
   const { account, walletClient } = createWallet();
   const user = account.address;
-  const withdrawShares = parseUnits(shares, 18);
 
-  console.log(`\n  Withdraw Flow — ${tranche}`);
-  console.log(`  User:    ${user}`);
-  console.log(`  Shares:  ${shares}`);
+  // Determine withdraw amount: --all reads the user's full balance, else --shares
+  const shareBalance = await sdk.getShareBalance(tranche, user);
+  let withdrawShares: bigint;
+  if (all) {
+    if (shareBalance === 0n) throw new Error(`No ${tranche} shares to withdraw`);
+    withdrawShares = shareBalance;
+    console.log(`\n  Withdraw ALL — ${tranche}`);
+    console.log(`  User:    ${user}`);
+    console.log(`  Shares:  ${formatUnits(withdrawShares, 18)} (full balance)`);
+  } else {
+    withdrawShares = parseUnits(sharesArg!, 18);
+    console.log(`\n  Withdraw Flow — ${tranche}`);
+    console.log(`  User:    ${user}`);
+    console.log(`  Shares:  ${sharesArg}`);
+  }
   console.log(`  Output:  sUSDai (underlying)\n`);
 
   // 1. Check balance
-  const shareBalance = await sdk.getShareBalance(tranche, user);
   console.log(`  Share balance: ${formatUnits(shareBalance, 18)}`);
   if (shareBalance < withdrawShares) throw new Error(`Insufficient shares`);
 

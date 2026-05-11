@@ -1,6 +1,6 @@
 # PrimeVaults SDK
 
-TypeScript SDK for **PrimeVaults V2** — a 3-tranche structured yield protocol on Arbitrum. All three tranches (Senior, Mezzanine, Junior) are base-asset only (USD.AI) and share the same deposit/withdraw API.
+TypeScript SDK for **PrimeVaults V2** — a 2-tranche structured yield protocol on Arbitrum. Both tranches (Senior, Junior) are base-asset only (USD.AI) and share the same deposit/withdraw API. Senior is principal-protected via a 3-layer loss waterfall (Junior → Senior yield-tier → Senior principal-tier).
 
 ## Installation
 
@@ -31,16 +31,17 @@ const sdk = new PrimeVaultsSDK({
   addresses: {
     primeCDO: "0x...",
     seniorVault: "0x...",
-    mezzVault: "0x...",
     juniorVault: "0x...",
     primeLens: "0x...",
     accounting: "0x...",
     strategy: "0x...",
     // optional
+    outputToken: "0x...", // sUSDai
     erc20Cooldown: "0x...",
     sharesCooldown: "0x...",
     redemptionPolicy: "0x...",
     aprFeed: "0x...",
+    aprProvider: "0x...",
     riskParams: "0x...",
     primeLock: "0x...",
   },
@@ -53,8 +54,12 @@ const sdk = new PrimeVaultsSDK({
 
 ```ts
 const health = await sdk.getProtocolHealth();
-// { seniorTVL, mezzTVL, juniorTVL, totalTVL, coverageSenior, coverageMezz,
-//   minCoverageForDeposit, shortfallPaused, juniorShortfallPausePrice, strategyTVL }
+// { seniorTVL, seniorPrincipal, seniorYield, juniorTVL, totalTVL,
+//   coverageSenior, minCoverageForDeposit, shortfallPaused, strategyTVL }
+//
+// seniorPrincipal = sum of net Senior deposits (locked-in USDai value).
+// seniorYield     = seniorTVL - seniorPrincipal (yield-tier absorbed before principal in loss).
+// coverageSenior  = (Sr + Jr) / Sr — Senior coverage ratio.
 ```
 
 ### Tranches (with APY)
@@ -64,9 +69,8 @@ const health = await sdk.getProtocolHealth();
 const senior = await sdk.getTrancheById(TrancheId.SENIOR);
 console.log(senior.apy); // 18 decimals — divide by 1e18 for percent
 
-// All three (single multicall)
+// Both tranches
 const senior = await sdk.getTrancheById(TrancheId.SENIOR);
-const mezz   = await sdk.getTrancheById(TrancheId.MEZZ);
 const junior = await sdk.getTrancheById(TrancheId.JUNIOR);
 ```
 
@@ -76,15 +80,21 @@ const junior = await sdk.getTrancheById(TrancheId.JUNIOR);
 
 ```ts
 const portfolio = await sdk.getUserPortfolio("0xUser...");
-// { senior: { shares, assets }, mezz: {...}, junior: {...}, totalAssetsUSD }
+// { senior: { shares, assets }, junior: { shares, assets }, totalAssetsUSD }
 ```
 
 ### Preview Withdraw
 
 ```ts
-const preview = await sdk.previewWithdraw(TrancheId.MEZZ, sharesToBurn);
+const preview = await sdk.previewWithdraw(TrancheId.JUNIOR, sharesToBurn);
 // { mechanism (NONE/ASSETS_LOCK/SHARES_LOCK), feeBps, cooldownDuration,
-//   feeAmount, netBaseAmount, baseAmountOut }
+//   feeAmount, netBaseAmount, baseAmountOut, outputTokenAmount }
+//
+// Senior is always NONE (instant, 0 fee).
+// Junior selects mechanism based on cs = (Sr+Jr)/Sr coverage:
+//   cs > 160% → NONE        (instant)
+//   140% < cs ≤ 160% → ASSETS_LOCK (3-day default)
+//   cs ≤ 140% → SHARES_LOCK (7-day default, yield accrues during cooldown)
 ```
 
 ### Pending Withdrawals
@@ -187,14 +197,14 @@ ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranch
 ARB_RPC_URL=<url> PRIVATE_KEY=<key> npx tsx lib/scripts/deposit-flow.ts --tranche JUNIOR --amount 25 --dry-run
 
 # Withdraw
-npx tsx lib/scripts/withdraw-flow.ts --tranche MEZZ --shares 10
+npx tsx lib/scripts/withdraw-flow.ts --tranche JUNIOR --shares 10
 npx tsx lib/scripts/withdraw-flow.ts --claim --cooldown-id 1 --tranche SENIOR
 npx tsx lib/scripts/withdraw-flow.ts --claim-shares --cooldown-id 2 --tranche JUNIOR
 
 # Governance / admin
 npx tsx lib/scripts/claim-reserve.ts --recipient 0xTreasury...
 npx tsx lib/scripts/unpause.ts
-npx tsx lib/scripts/set-cooldown.ts --tranche MEZZ --assets-lock 3d --shares-lock 7d
+npx tsx lib/scripts/set-cooldown.ts --tranche JUNIOR --assets-lock 3d --shares-lock 7d
 ```
 
 ## Exported Types

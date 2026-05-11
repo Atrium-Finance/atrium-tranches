@@ -1,6 +1,6 @@
 {
   "name": "primevaults-sdk",
-  "version": "0.5.2",
+  "version": "2.0.0",
   "description": "PrimeVaults V2 SDK for frontend integration",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
