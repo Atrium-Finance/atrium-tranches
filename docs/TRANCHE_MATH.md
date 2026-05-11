@@ -1,7 +1,10 @@
-# PrimeVaults V3 — Tranche Math Reference
+# PrimeVaults V2 — Tranche Math Reference
 
 All formulas used in the PrimeVaults protocol, mapped to their Solidity implementation.
 All values use **18-decimal fixed-point** (1e18 = 1.0) unless noted otherwise.
+
+> **2-tranche protocol** — Senior (principal-protected) + Junior (loss absorber).
+> Strata Protocol design: 1 CDO = 1 Strategy.
 
 ---
 
@@ -9,16 +12,16 @@ All values use **18-decimal fixed-point** (1e18 = 1.0) unless noted otherwise.
 
 1. [Notation](#1-notation)
 2. [Share Price & ERC-4626](#2-share-price--erc-4626)
-3. [Coverage Ratios](#3-coverage-ratios)
+3. [Coverage Ratio](#3-coverage-ratio)
 4. [Coverage Gate (Deposit Blocking)](#4-coverage-gate)
-5. [Risk Premium Curves (RP1, RP2)](#5-risk-premium-curves)
+5. [Risk Premium Curve (RP1)](#5-risk-premium-curve)
 6. [APY Computation Chain](#6-apy-computation-chain)
 7. [Gain Splitting](#7-gain-splitting)
-8. [Loss Waterfall](#8-loss-waterfall)
+8. [Loss Waterfall (3-Layer + Senior Principal Protection)](#8-loss-waterfall)
 9. [Withdrawal Fees](#9-withdrawal-fees)
 10. [Cooldown Mechanism Selection](#10-cooldown-mechanism-selection)
-11. [SHARES_LOCK Claim Math](#11-shares_lock-claim-math)
-12. [Shortfall Auto-Pause](#12-shortfall-auto-pause)
+11. [SHARES_LOCK Claim Math (with Snapshot Cap)](#11-shares_lock-claim-math)
+12. [Manual Shortfall Pause](#12-manual-shortfall-pause)
 13. [Deposit Base-Equivalent Conversion](#13-deposit-base-equivalent-conversion)
 14. [Governance Parameter Bounds](#14-governance-parameter-bounds)
 15. [Worked Examples](#15-worked-examples)
@@ -30,22 +33,21 @@ All values use **18-decimal fixed-point** (1e18 = 1.0) unless noted otherwise.
 | Symbol | Description | Solidity |
 |--------|-------------|----------|
 | `Sr` | Senior TVL (base asset) | `s_seniorTVL` |
-| `Mz` | Mezzanine TVL (base asset) | `s_mezzTVL` |
 | `Jr` | Junior TVL (base asset) | `s_juniorBaseTVL` |
+| `SrP` | Senior principal (net Senior deposits) | `s_seniorPrincipal` |
+| `SrY` | Senior accrued yield = `Sr - SrP` | (derived) |
 | `Res` | Reserve TVL (accumulated fees + gain cut) | `s_reserveTVL` |
-| `Pool` | Total tranche TVL = Sr + Mz + Jr | — |
+| `Pool` | Total tranche TVL = Sr + Jr | — |
 | `cs` | Senior coverage ratio | `_getCoverageSenior()` |
-| `cm` | Mezzanine coverage ratio | `_getCoverageMezz()` |
 | `RP1` | Senior risk premium (yield discount) | `_computeRP1()` |
-| `RP2` | Mezz/Junior risk premium | `_computeRP2()` |
-| `APY_base` | Strategy base APY (from APR feed) | `_computeBaseAPY()` |
-| `APY_aave` | Aave benchmark APY (floor) | `_getAprPair().aprTarget` |
-| `APY_sr` | Senior target APY | `_computeSeniorAPY()` |
-| `APY_sub` | Sub-pool effective APY | `_computeSubPoolAPY()` |
-| `APY_mz` | Mezzanine target APY | `_computeMezzAPY()` |
-| `APY_jr` | Junior residual APY | `_computeJuniorAPY()` |
+| `aprBase` | Strategy APR (sUSDai growth) | `AprPairFeed.aprBase` |
+| `aprTargetSenior` | Aave benchmark APR (Senior floor) | `AprPairFeed.aprTargetSenior` |
+| `APY_sr` | Senior APY | `_computeSeniorAPY()` |
+| `APY_jr` | Junior APY | `_computeJuniorAPY()` |
 | `deltaT` | Seconds since last accounting update | `block.timestamp - s_lastUpdateTimestamp` |
 | `YEAR` | 365 days in seconds = 31,536,000 | `365 days` |
+
+> APR feed values are **int64 × 12-decimal** (1% = 1e10). Accounting upscales to 18-decimal internally.
 
 ---
 
@@ -81,97 +83,71 @@ First deposit (`totalSupply = 0`): `shares = amount` (1:1).
 
 **Invariant:** `sharePrice_before == sharePrice_after` for every deposit.
 
-### Full Drain Guard
+### baseAmount Recompute (Audit H#1 Fix)
 
-When `shares == totalSupply` (last withdrawal):
+`PrimeCDO.requestWithdraw` recomputes `baseAmount` from live `vaultShares` **after** `_updateAccounting()` runs, defeating stale-snapshot drain when the loss waterfall fires in-call:
 
 ```
-baseAmount = totalAssets    (not convertToAssets — avoids dust from virtual shares)
+baseAmount = vaultShares >= totalSupply
+    ? freshTVL
+    : (vaultShares × freshTVL) / totalSupply
 ```
 
-**Contract:** `TrancheVault.requestWithdraw()` (line 175)
+**Contract:** `PrimeCDO._quoteBaseAmount()`, called inside `PrimeCDO.requestWithdraw()` (line 237).
 
 ---
 
-## 3. Coverage Ratios
+## 3. Coverage Ratio
 
-Coverage measures how much subordinated capital protects a tranche.
+Coverage measures how much subordinated capital protects Senior.
 
 ### Senior Coverage (cs)
 
 ```
-cs = (Sr + Mz + Jr) / Sr
+cs = (Sr + Jr) / Sr
 ```
 
 If `Sr = 0`: `cs = MAX_UINT256` (infinite — allow first deposit).
 
-**Contract:** `PrimeCDO._getCoverageSenior()` (line 450)
+**Contract:** `PrimeCDO._getCoverageSenior()` (line 510)
 
-**Interpretation:** cs = 2.0 means for every $1 of Senior, there's $1 of Mezz+Jr subordination (50% buffer). cs = 1.0 means zero buffer.
-
-### Mezzanine Coverage (cm)
-
-```
-cm = (Mz + Jr) / Mz
-```
-
-If `Mz = 0`: `cm = MAX_UINT256` (infinite).
-
-**Contract:** `PrimeCDO._getCoverageMezz()` (line 463)
+**Interpretation:** `cs = 2.0` means for every $1 of Senior there's $1 of Junior subordination (50% buffer). `cs = 1.0` means zero buffer.
 
 ---
 
 ## 4. Coverage Gate
 
-Blocks Senior/Mezz deposits when coverage is too low. Junior deposits are never blocked (they increase coverage).
+Blocks Senior deposits when coverage is too low. Junior deposits are never blocked (they increase coverage).
 
 ```
 Senior deposit: requires cs >= minCoverageForDeposit    (default 1.05e18 = 105%)
-Mezz deposit:   requires cm >= minCoverageForDeposit    (default 1.05e18 = 105%)
 Junior deposit: always allowed
 ```
 
-**Contract:** `PrimeCDO.deposit()` (lines 166-173)
+**Contract:** `PrimeCDO.deposit()` (line 173)
 
 ---
 
-## 5. Risk Premium Curves
+## 5. Risk Premium Curve
 
-Premium curves determine how much yield Senior/Mezz sacrifice for protection.
+Single premium curve `RP1` determines how much yield Senior sacrifices for protection.
 
 ### RP1 — Senior Risk Premium
 
 ```
-ratio_sr = Sr / Pool
-RP1 = x₁ + y₁ × ratio_sr^k₁
+ratio_sr = Sr / (Sr + Jr)
+RP1 = x + y × ratio_sr^k
 ```
 
 | Parameter | Default | Bound |
 |-----------|---------|-------|
-| x₁ | 0.10 (10%) | ≤ 0.30 |
-| y₁ | 0.125 (12.5%) | x₁ + y₁ ≤ 0.80 |
-| k₁ | 0.3 | — |
+| x | 0.10 (10%) | ≤ 0.30 |
+| y | 0.125 (12.5%) | x + y ≤ 0.80 |
+| k | 0.3 | — |
 
-**Contract:** `Accounting._computeRP1()` (line 330), `RiskParams.s_seniorPremium`
+**Contract:** `Accounting._computeRP1()` (line 361), `RiskParams.s_seniorPremium`
 
-**Behavior:** As Senior grows relative to pool → `ratio_sr` increases → RP1 increases → Senior gets less yield (pays more for protection).
-
-### RP2 — Mezzanine/Junior Risk Premium
-
-```
-ratio_mz_sub = Mz / (Mz + Jr)
-RP2 = x₂ + y₂ × ratio_mz_sub^k₂
-```
-
-| Parameter | Default | Bound |
-|-----------|---------|-------|
-| x₂ | 0.05 (5%) | — |
-| y₂ | 0.10 (10%) | x₂ + y₂ ≤ 0.50 |
-| k₂ | 0.5 | — |
-
-**Contract:** `Accounting._computeRP2()` (line 345), `RiskParams.s_juniorPremium`
-
-**Behavior:** As Mezzanine grows relative to sub-pool → RP2 increases → Mezz gets less yield → more goes to Junior.
+**Behavior:** As Senior grows relative to the pool → `ratio_sr` increases → RP1 increases → Senior gets less yield (pays more for protection).
 
 ### Fixed-Point Power
 
@@ -185,71 +161,45 @@ fpow(base, exp) = PRBMath.UD60x18.pow(base, exp)
 
 ## 6. APY Computation Chain
 
-APY flows top-down: Base → Senior → Sub-pool → Mezzanine → Junior.
+APY flows: aprBase / aprTargetSenior → Senior → Junior (residual with leverage).
 
-### Step 1: Base APY
+### Step 1: APR Feed Inputs
 
 ```
-APY_base = strategyAPR    (from AprPairFeed.latestRoundData().aprBase)
+aprBase          = strategyAPR    (sUSDai exchange-rate growth from snapshots)
+aprTargetSenior  = Aave benchmark (aToken-supply-weighted avg lending rate)
 ```
 
-**Contract:** `Accounting._computeBaseAPY()` (line 375)
+Both read via `AprPairFeed.latestRoundData()`. Returned as **int64 × 12-decimal**, upscaled by `1e6` to 18-decimal inside Accounting.
 
 ### Step 2: Senior APY
 
 ```
-APY_sr = MAX(APY_aave, APY_base × (1 - RP1))
+APY_sr = MAX(aprTargetSenior, aprBase × (1 - RP1))
 ```
 
-Floor = Aave weighted-average benchmark. Senior never earns less than Aave.
+Floor = Aave benchmark. Senior never earns less than the benchmark (subject to liquidity).
 
-**Contract:** `Accounting._computeSeniorAPY()` (line 383)
+**Contract:** `Accounting._computeSeniorAPY()` (line 403)
 
-### Step 3: Sub-pool APY
+### Step 3: Junior APY (Residual)
 
-The "sub-pool" is Mezzanine + Junior. It captures the yield Senior didn't take.
-
-```
-leverage = Sr / (Mz + Jr)
-
-If APY_base >= APY_sr:
-    APY_sub = APY_base + (APY_base - APY_sr) × leverage     [normal: sub-pool boosted]
-Else:
-    APY_sub = APY_base - (APY_sr - APY_base) × leverage     [floor active: sub-pool pays]
-    APY_sub = MAX(0, APY_sub)                                [clamp to 0]
-```
-
-**Contract:** `Accounting._computeSubPoolAPY()` (line 399)
-
-**Intuition:** When Senior takes less than base rate (normal), the surplus flows to the sub-pool, amplified by leverage. When Aave floor kicks in and Senior takes more than base rate, the sub-pool pays the premium.
-
-### Step 4: Mezzanine APY
+Junior takes the entire sub-pool — there is no Mezzanine layer.
 
 ```
-APY_mz = MAX(APY_aave, APY_sub × (1 - RP2))
+leverage = Sr / Jr        (if Jr > 0, else APY_jr = 0)
+
+If aprBase >= APY_sr:                                       [normal: surplus]
+    APY_jr = aprBase + (aprBase - APY_sr) × leverage
+
+Else:                                                       [floor active: deficit]
+    deficit = (APY_sr - aprBase) × leverage
+    APY_jr = aprBase >= deficit ? aprBase - deficit : 0     [clamped to 0]
 ```
 
-Floor = Aave benchmark. Mezzanine never earns less than Aave.
+**Contract:** `Accounting._computeJuniorAPY()` (line 420)
 
-**Contract:** `Accounting._computeMezzAPY()` (line 424)
-
-### Step 5: Junior APY (Residual)
-
-```
-mezzLeverage = Mz / Jr
-
-If APY_sub >= APY_mz:
-    APY_jr = APY_sub + (APY_sub - APY_mz) × mezzLeverage
-Else:
-    APY_jr = 0
-```
-
-If `Mz = 0`: `APY_jr = APY_sub` (Junior gets full sub-pool).
-If `Jr = 0`: `APY_jr = 0`.
-
-**Contract:** `Accounting._computeJuniorAPY()` (line 443)
-
-**Intuition:** Junior gets everything left after Mezzanine takes its cut. Leveraged by how large Mezzanine is relative to Junior.
+**Intuition:** Junior gets `aprBase` plus a leveraged share of the surplus Senior didn't take. When the Aave floor exceeds `aprBase`, Senior pulls extra from Junior — Junior's APY can drop to 0 (actual losses then flow through the share price via the waterfall).
 
 ---
 
@@ -260,96 +210,101 @@ Called by `updateTVL()` on every deposit/withdraw when `strategy.totalAssets() >
 ### Step 1: Detect Gain
 
 ```
-prevTotal = Sr + Mz + Jr + Res
+prevTotal = Sr + Jr + Res
 gain = strategy.totalAssets() - prevTotal
 ```
 
 If `gain = 0` or `deltaT = 0`: skip.
 
-**Contract:** `Accounting.updateTVL()` (line 122)
+**Contract:** `Accounting.updateTVL()` (line 140)
 
 ### Step 2: Reserve Cut
 
 ```
 reserveCut = gain × reserveBps / 10,000
-netGain = gain - reserveCut
-Res += reserveCut
+netGain    = gain - reserveCut
+Res       += reserveCut
 ```
 
 Default `reserveBps = 500` (5%).
 
-**Contract:** `Accounting._splitGain()` (line 238)
+**Contract:** `Accounting._splitGain()` (line 260)
 
 ### Step 3: Senior Target Gain
 
 ```
-seniorTarget = Sr × APY_sr × deltaT / YEAR
-Sr += seniorTarget
+seniorTarget   = Sr × APY_sr × deltaT / YEAR
+Sr            += seniorTarget          (yield-tier — does NOT increase SrP)
 
-// Compound index update:
 interestFactor = APY_sr × deltaT / YEAR
 srtTargetIndex = srtTargetIndex × (1 + interestFactor)
 ```
 
-**Contract:** `Accounting._splitGain()` (lines 244-251)
+**Contract:** `Accounting._splitGain()` (line 260)
 
-### Step 4: Mezzanine Target Gain
-
-```
-mezzTarget = Mz × APY_mz × deltaT / YEAR
-Mz += mezzTarget
-
-// Compound index update:
-interestFactor = APY_mz × deltaT / YEAR
-mzTargetIndex = mzTargetIndex × (1 + interestFactor)
-```
-
-**Contract:** `Accounting._splitGain()` (lines 254-261)
-
-### Step 5: Junior Residual or Deficit
+### Step 4: Junior Residual or Deficit
 
 ```
-totalTarget = seniorTarget + mezzTarget
-
-If netGain >= totalTarget:
-    juniorGain = netGain - totalTarget         [CASE A: surplus]
-    Jr += juniorGain
+If netGain >= seniorTarget:
+    juniorGain = netGain - seniorTarget
+    Jr        += juniorGain                          [CASE A: surplus]
 Else:
-    deficit = totalTarget - netGain            [CASE B: shortfall]
-    applyLossWaterfall(deficit)                [Junior absorbs first]
+    deficit    = seniorTarget - netGain              [CASE C: shortfall]
+    applyLossWaterfall(deficit)                      [Junior absorbs first]
 ```
 
-**Contract:** `Accounting._splitGain()` (lines 265-281)
+**Contract:** `Accounting._splitGain()` (line 260)
 
-**Key insight:** Senior and Mezzanine ALWAYS receive their full target gain, even if actual yield is insufficient. The deficit is pushed to the loss waterfall. This guarantees Senior/Mezz target APY at Junior's expense.
+**Key invariant:** Senior always receives its full target gain. Any shortfall flows through the loss waterfall.
 
 ---
 
 ## 8. Loss Waterfall
 
-Applied when `strategy.totalAssets() < previous accounting total`, or when gain splitting has a deficit.
+Applied when `strategy.totalAssets() < previous accounting total`, or when gain splitting has a deficit. **Three layers**, with Senior split into yield-tier (consumable) and principal-tier (last resort).
 
 ```
 remaining = loss
+SrY = Sr > SrP ? Sr - SrP : 0       // Senior accrued yield
 
 // Layer 1: Junior absorbs first
-jrAbsorbed = MIN(remaining, Jr)
-Jr -= jrAbsorbed
-remaining -= jrAbsorbed
+jrAbsorbed   = MIN(remaining, Jr)
+Jr          -= jrAbsorbed
+remaining   -= jrAbsorbed
 
-// Layer 2: Mezzanine
-mzAbsorbed = MIN(remaining, Mz)
-Mz -= mzAbsorbed
-remaining -= mzAbsorbed
+// Layer 2: Senior yield-tier
+srYAbsorbed  = MIN(remaining, SrY)
+Sr          -= srYAbsorbed
+remaining   -= srYAbsorbed
 
-// Layer 3: Senior (last resort)
-srAbsorbed = MIN(remaining, Sr)
-Sr -= srAbsorbed
+// Layer 3: Senior principal-tier (LAST RESORT)
+srPAbsorbed  = MIN(remaining, SrP)
+Sr          -= srPAbsorbed
+SrP         -= srPAbsorbed
+emit SeniorPrincipalAbsorbed(srPAbsorbed)
 ```
 
-**Contract:** `Accounting._applyLossWaterfall()` (line 294)
+**Contract:** `Accounting._applyLossWaterfall()` (line 304)
 
-**Priority:** Junior (first loss) → Mezzanine → Senior (last resort).
+### Senior Principal Tracking (`s_seniorPrincipal`)
+
+`SrP` tracks net Senior deposits and is preserved as long as possible:
+
+| Operation | Effect on `SrP` |
+|-----------|----------------|
+| `recordDeposit(SENIOR, x)` | `SrP += x` (line 172) |
+| `recordWithdraw(SENIOR, x)` / `recordFee(SENIOR, x)` | `SrP` scales pro-rata: `SrP × newSr / oldSr` |
+| `recordDeposit(JUNIOR, x)` | no change (Junior never tracked) |
+| Senior gain split (Step 3 above) | no change — Senior gain credits to `Sr` only |
+| Layer 3 waterfall | `SrP` decremented and `SeniorPrincipalAbsorbed` emitted |
+
+**Contract:** `Accounting._scaleSeniorPrincipal()` (line 334)
+
+**Invariant:** `SrP ≤ Sr` at all times. While `Jr + SrY` can cover a loss, `SrP` is preserved verbatim — Senior's deposit value is locked in.
+
+### Why Junior APY Returns 0 (Not Negative)
+
+`_computeJuniorAPY` floors at 0 even when the Aave-floor deficit would imply a negative number. Actual Junior losses are not surfaced through APY — they are reflected through the **share price** (`Jr / Jr_totalSupply`) after the waterfall has trimmed `Jr`.
 
 ---
 
@@ -358,29 +313,28 @@ Sr -= srAbsorbed
 Fees are deducted from the withdrawal base amount and moved to reserve.
 
 ```
-feeAmount = baseAmount × feeBps / 10,000
-netAmount = baseAmount - feeAmount
-trancheTVL -= feeAmount     (via recordFee)
-Res += feeAmount
+feeAmount   = baseAmount × feeBps / 10,000
+netAmount   = baseAmount - feeAmount
+trancheTVL -= feeAmount     (via recordFee, scales SrP pro-rata if Senior)
+Res        += feeAmount
 ```
 
 **Default fee schedule:**
 
 | Tranche | NONE (instant) | ASSETS_LOCK | SHARES_LOCK |
-|---------|---------------|-------------|-------------|
+|---------|----------------|-------------|-------------|
 | Senior  | 0 bps | 0 bps | 0 bps |
-| Mezz    | 0 bps | 10 bps (0.1%) | 50 bps (0.5%) |
 | Junior  | 0 bps | 20 bps (0.2%) | 100 bps (1.0%) |
 
-Max fee: 1,000 bps (10%).
+Max fee per mechanism: 1,000 bps (10%).
 
-**Contract:** `PrimeCDO.requestWithdraw()` (lines 220-223), `RedemptionPolicy.MechanismConfig`
+**Contract:** `PrimeCDO.requestWithdraw()` (line 237), `RedemptionPolicy.MechanismConfig`
 
 ---
 
 ## 10. Cooldown Mechanism Selection
 
-RedemptionPolicy selects the mechanism based on live coverage ratios.
+RedemptionPolicy selects the mechanism based on live Senior coverage `cs`.
 
 ### Senior — Always Instant
 
@@ -388,124 +342,105 @@ RedemptionPolicy selects the mechanism based on live coverage ratios.
 Senior → NONE (always, regardless of coverage)
 ```
 
-### Mezzanine — Single-Dimensional (cs only)
+### Junior — Single-Dimensional (cs only)
 
 ```
-If cs > 1.60:  NONE          (instant)
-If cs > 1.40:  ASSETS_LOCK   (lock sUSDai, 3 days default)
-If cs ≤ 1.40:  SHARES_LOCK   (escrow shares, 7 days default)
+If cs >  instantCs    (default 1.60):  NONE          (instant)
+If cs >  assetLockCs  (default 1.40):  ASSETS_LOCK   (lock sUSDai, 3 days default)
+If cs <= assetLockCs:                  SHARES_LOCK   (escrow shares, 7 days default)
 ```
 
-**Contract:** `RedemptionPolicy._evaluateMezzMechanism()` (line 214)
-
-### Junior — Two-Dimensional (cs AND cm)
-
-Evaluate cs and cm independently, take the **most restrictive** result.
-
-```
-cs_mechanism:
-  cs > 1.60 → NONE
-  cs > 1.40 → ASSETS_LOCK
-  cs ≤ 1.40 → SHARES_LOCK
-
-cm_mechanism:
-  cm > 1.50 → NONE
-  cm > 1.30 → ASSETS_LOCK
-  cm ≤ 1.30 → SHARES_LOCK
-
-Junior mechanism = MAX(cs_mechanism, cm_mechanism)
-```
-
-Where `SHARES_LOCK > ASSETS_LOCK > NONE`.
-
-**Contract:** `RedemptionPolicy._evaluateJuniorMechanism()` (line 222)
-
-**Example:** cs = 200% (→ NONE) but cm = 125% (→ SHARES_LOCK). Result: SHARES_LOCK.
-
-### Default Thresholds
-
-| Threshold | Mezz (cs only) | Junior cs | Junior cm |
-|-----------|---------------|-----------|-----------|
-| Instant   | 1.60 (160%) | 1.60 (160%) | 1.50 (150%) |
-| Asset Lock | 1.40 (140%) | 1.40 (140%) | 1.30 (130%) |
+**Contract:** `RedemptionPolicy._evaluateJuniorMechanism()` (line 173), `RedemptionPolicy.s_juniorParams`
 
 ---
 
 ## 11. SHARES_LOCK Claim Math
 
-When SHARES_LOCK expires, shares are converted to base value at the **current** exchange rate (user benefits from yield accrued during cooldown).
+When SHARES_LOCK expires, shares are converted to base value at the **current** exchange rate (user benefits from yield accrued during cooldown), capped at a maximum growth multiple of the request-time snapshot to defeat rate-pump attacks (Audit M#1).
 
 ### At Request Time
 
 ```
-fee deducted from trancheTVL → moved to reserve
-shares escrowed in SharesCooldown (NOT burned)
-strategy NOT touched
-totalSupply unchanged → TVL unchanged → coverage stable
+baseAmountSnapshot = (vaultShares × baseTVL) / totalSupply
+fee = baseAmountSnapshot × feeBps / 10_000
+recordFee(JUNIOR, fee)                                   // moves fee → reserve
+SharesCooldown.request(shares, beneficiary, cdo)         // shares escrowed in CDO
+
+s_sharesLockBaseSnapshot[requestId] = baseAmountSnapshot - fee     // post-fee baseline
 ```
+
+**Strategy is NOT touched. `totalSupply` is unchanged. Coverage stays stable during cooldown.**
 
 ### At Claim Time
 
 ```
-sharesReturned = SharesCooldown.claim(id)     [shares go back to CDO]
-updateAccounting()                             [sync gain/loss]
+sharesReturned = SharesCooldown.claim(id)        // shares returned to CDO
+_updateAccounting()                              // sync gain/loss
 
-totalSupply = vault.totalSupply()
-baseTVL = Accounting.getTrancheTVL(tranche)
+totalSupply    = vault.totalSupply()
+baseTVL        = Accounting.getTrancheTVL(JUNIOR)
+liveBase       = (sharesReturned × baseTVL) / totalSupply
 
-baseAmount = sharesReturned × baseTVL / totalSupply
+snapshot       = s_sharesLockBaseSnapshot[id]
+maxAllowed     = snapshot + snapshot × s_maxClaimGrowthBps / 10_000
+baseAmount     = MIN(liveBase, maxAllowed)       // M#1 cap
 
-Accounting.recordWithdraw(tranche, baseAmount)
+Accounting.recordWithdraw(JUNIOR, baseAmount)
 strategy.withdraw(baseAmount) → sUSDai to beneficiary
 vault.burnSharesFrom(CDO, sharesReturned)
+delete s_sharesLockBaseSnapshot[id]
 ```
 
-**Contract:** `PrimeCDO.claimSharesWithdraw()` (line 342)
+**Contract:** `PrimeCDO.claimSharesWithdraw()` (line 380)
 
-**Key property:** During cooldown, `baseTVL` increases (yield accrual), so `baseAmount` at claim time ≥ `baseAmount` at request time. User earns yield while waiting.
+| Parameter | Default | Max |
+|-----------|---------|-----|
+| `s_maxClaimGrowthBps` | 5_000 (50%) | 10_000 (100%) |
+
+**Properties:**
+- During cooldown, `baseTVL` increases via normal yield accrual → user earns yield while waiting (up to the cap).
+- An attacker who pumps the exchange rate immediately before claim cannot drain more than `snapshot × (1 + maxGrowthBps/10_000)`.
 
 ---
 
-## 12. Shortfall Auto-Pause
+## 12. Manual Shortfall Pause
 
-Protocol auto-pauses if Junior share price drops below a threshold.
+> **Audit L#5 fix:** Automatic Junior shortfall auto-pause was removed (it was weaponizable as a DoS by anyone who could push Junior PPS below threshold). Emergency pause is now **manual, guardian-only**.
 
 ```
-juniorPrice = Jr_TVL × 1e18 / Jr_totalSupply
-
-If juniorPrice < shortfallPausePrice:
-    s_shortfallPaused = true
+triggerShortfallPause()    onlyGuardian   → s_shortfallPaused = true
+unpauseShortfall()         onlyOwnerOrGuardian → s_shortfallPaused = false
 ```
 
-Default `shortfallPausePrice = 0.90e18` (90%). Set to 0 to disable.
+While `s_shortfallPaused == true`: all `deposit` and `requestWithdraw` calls revert with `PrimeVaults__ShortfallPaused`.
 
-**Contract:** `PrimeCDO._checkJuniorShortfall()` (line 476)
+**Contract:** `PrimeCDO.triggerShortfallPause()` (line 465), `PrimeCDO.unpauseShortfall()`.
 
-**When checked:** At the start of every deposit/withdraw, after `updateTVL()` runs.
-
-**Recovery:** `unpauseShortfall()` — callable by owner or guardian.
+There is **no automatic trigger** based on Junior share price. Off-chain monitoring (or governance) is expected to decide when to pause.
 
 ---
 
 ## 13. Deposit Base-Equivalent Conversion
 
-Deposits can be base asset (USDai) or output token (sUSDai). Shares are always minted based on base-equivalent value.
+Deposits can be base asset (USD.AI) or output token (sUSDai). Shares are always minted based on base-equivalent value.
 
-### Base Asset (USDai)
+### Base Asset (USD.AI)
 
 ```
 baseAmount = amount       (1:1)
-shares = previewDeposit(baseAmount)
+shares     = previewDeposit(baseAmount)
 ```
 
 ### Output Token (sUSDai)
 
 ```
-baseAmount = sUSDai.convertToAssets(amount)     [sUSDai → USDai equivalent]
-shares = previewDeposit(baseAmount)
+baseAmount = sUSDai.convertToAssets(amount)     [sUSDai → USD.AI equivalent]
+shares     = previewDeposit(baseAmount)
 ```
 
-**Contract:** `PrimeCDO.deposit()` (lines 183-184), `TrancheVault.depositOutputToken()` (line 148)
+**Contract:** `PrimeCDO.deposit()` (line 173), `TrancheVault.depositOutputToken()` (line 148)
+
+> **Audit M#1 (deposit-side, accepted risk):** `convertToAssets` reads sUSDai's live exchange rate with no TWAP/slippage param. Front-running risk exists but sUSDai uses a Spark-style `chi` accumulator that is not directly user-pumpable, so it is documented but not mitigated at the contract level.
 
 ---
 
@@ -513,16 +448,16 @@ shares = previewDeposit(baseAmount)
 
 | Parameter | Min | Max | Default |
 |-----------|-----|-----|---------|
-| Senior RP1 x | — | 0.30 (30%) | 0.10 (10%) |
-| Senior RP1 x+y | — | 0.80 (80%) | 0.225 (22.5%) |
-| Junior RP2 x+y | — | 0.50 (50%) | 0.15 (15%) |
-| Alpha | 0.40 (40%) | 0.80 (80%) | 0.60 (60%) |
+| Senior RP1 `x` | — | 0.30 (30%) | 0.10 (10%) |
+| Senior RP1 `x + y` | — | 0.80 (80%) | 0.225 (22.5%) |
 | Reserve bps | — | 2,000 (20%) | 500 (5%) |
 | Fee bps (per mechanism) | — | 1,000 (10%) | see §9 |
 | Min coverage deposit | — | — | 1.05 (105%) |
-| Shortfall pause price | 0 (disabled) | — | 0.90 (90%) |
+| `s_maxClaimGrowthBps` (M#1 cap) | — | 10,000 (100%) | 5,000 (50%) |
 
-**Contract:** `RiskParams` (bounds), `RedemptionPolicy` (fee + threshold config)
+**Contract:** `RiskParams` (`MAX_SENIOR_X`, `MAX_SENIOR_XY`, `MAX_RESERVE_BPS`), `RedemptionPolicy` (fee + threshold config), `PrimeCDO` (`s_maxClaimGrowthBps`, `s_minCoverageForDeposit`).
+
+> Junior premium / RP2 / shortfall-pause-price parameters were **removed** in the 2-tranche refactor.
 
 ---
 
@@ -530,124 +465,147 @@ shares = previewDeposit(baseAmount)
 
 ### Example A: Normal Gain Split
 
-**State:** Sr = 800, Mz = 100, Jr = 100. Pool = 1,000. Strategy yields 50 over period.
-Feed: APY_base = 5%, APY_aave = 3%.
+**State:** `Sr = 800, Jr = 200`. Pool = 1,000. Strategy yields 50 over period.
+Feed: `aprBase = 5%`, `aprTargetSenior = 3%`.
 
 **Step 1 — RP1:**
 ```
 ratio_sr = 800 / 1000 = 0.80
-RP1 = 0.10 + 0.125 × 0.80^0.3 = 0.10 + 0.125 × 0.9313 = 0.2164
+RP1      = 0.10 + 0.125 × 0.80^0.3 = 0.10 + 0.125 × 0.9362 ≈ 0.2170
 ```
 
 **Step 2 — Senior APY:**
 ```
-APY_sr = MAX(3%, 5% × (1 - 0.2164)) = MAX(3%, 3.918%) = 3.918%
+APY_sr = MAX(3%, 5% × (1 - 0.2170)) = MAX(3%, 3.915%) = 3.915%
 ```
 
-**Step 3 — Sub-pool APY:**
+**Step 3 — Junior APY:**
 ```
 leverage = 800 / 200 = 4.0
-APY_sub = 5% + (5% - 3.918%) × 4.0 = 5% + 4.328% = 9.328%
+aprBase (5%) >= APY_sr (3.915%) → normal branch
+APY_jr   = 5% + (5% - 3.915%) × 4.0 = 5% + 4.34% = 9.34%
 ```
 
-**Step 4 — RP2:**
+**Gain distribution (annualized on these APYs, pro-rated by deltaT):**
 ```
-ratio_mz_sub = 100 / 200 = 0.50
-RP2 = 0.05 + 0.10 × 0.50^0.5 = 0.05 + 0.0707 = 0.1207
+Reserve cut   = 50 × 5%       = 2.50
+netGain                       = 47.50
+
+Senior target = 800 × 3.915%  = 31.32   (annualized; pro-rated to deltaT)
+Junior residual = netGain − seniorTarget = 47.50 − 31.32 = 16.18
 ```
 
-**Step 5 — Mezz APY:**
-```
-APY_mz = MAX(3%, 9.328% × (1 - 0.1207)) = MAX(3%, 8.202%) = 8.202%
-```
-
-**Step 6 — Junior APY:**
-```
-mezzLeverage = 100 / 100 = 1.0
-APY_jr = 9.328% + (9.328% - 8.202%) × 1.0 = 10.454%
-```
-
-**Gain distribution (annualized on 1,000 at these APYs):**
-```
-Reserve cut   = 50 × 5%        = 2.50
-Senior target = 800 × 3.918%   = 31.34  (per year, pro-rated by deltaT)
-Mezz target   = 100 × 8.202%   = 8.20
-Junior residual = netGain - Sr - Mz = 47.50 - 31.34 - 8.20 = 7.96
-```
-
-**Verify:** Reserve + Sr + Mz + Jr = 2.50 + 31.34 + 8.20 + 7.96 = 50.00 ✓
+**Verify:** `Reserve + Sr_gain + Jr_gain = 2.50 + 31.32 + 16.18 = 50.00 ✓`
 
 ---
 
-### Example B: Deficit (Floor Active)
+### Example B: Floor Active + Deficit
 
-**State:** Sr = 800, Mz = 100, Jr = 100. Feed: APY_base = 2%, APY_aave = 4%.
+**State:** `Sr = 800, Jr = 200, SrP = 800`. Feed: `aprBase = 2%`, `aprTargetSenior = 4%`.
 
 ```
-APY_sr = MAX(4%, 2% × 0.7836) = MAX(4%, 1.567%) = 4%    [floor active]
+RP1      = 0.10 + 0.125 × 0.8^0.3 ≈ 0.2170
+APY_sr   = MAX(4%, 2% × 0.7830)  = MAX(4%, 1.566%) = 4%    [floor active]
 
 leverage = 4.0
-APY_sub = 2% - (4% - 2%) × 4.0 = 2% - 8% = -6% → clamped to 0%
-
-APY_mz = MAX(4%, 0%) = 4%    [floor active]
-APY_jr = 0%                    [nothing left]
+aprBase (2%) < APY_sr (4%) → floor branch
+deficit  = (4% - 2%) × 4.0 = 8%
+APY_jr   = 2% < 8% → 0     [clamped]
 ```
 
-**Gain split with actual gain = 20 (2% of 1,000):**
+**Gain split with `actual gain = 20` (≈ 2% of 1,000) over the period:**
 ```
-Reserve = 20 × 5% = 1.0
-netGain = 19.0
-Senior target = 800 × 4% = 32.0 (annualized, pro-rated)
-Mezz target = 100 × 4% = 4.0
+reserveCut    = 20 × 5%      = 1.00
+netGain                      = 19.00
 
-totalTarget = 36.0 > netGain = 19.0 → DEFICIT = 17.0
-```
-
-**Loss waterfall (deficit 17.0):**
-```
-Jr absorbs MIN(17.0, 100) = 17.0
-Jr: 100 → 83
+seniorTarget  = 800 × 4%     = 32.00   (annualized; assume full year for illustration)
+deficit       = 32.00 − 19.00 = 13.00  → applyLossWaterfall(13.00)
 ```
 
-Junior price drops: `83/100 shares = 0.83` — still above 0.90 pause threshold if the deficit is from a short period.
+**Loss waterfall (Layer 1 only — Junior covers):**
+```
+jrAbsorbed = MIN(13.00, 200) = 13.00
+Jr: 200 → 187
+SrY (=Sr−SrP=0) untouched, SrP (800) untouched
+```
+
+Senior is credited the full 32 target, Junior absorbs the 13 deficit, share price drops on Junior:
+```
+Junior PPS = 187 / 200 = 0.935    (down from 1.0)
+```
 
 ---
 
-### Example C: Coverage & Mechanism Selection
+### Example C: Catastrophic Loss — Senior Principal Touched
 
-**State:** Sr = 700, Mz = 100, Jr = 200
+**State:** `Sr = 1000, Jr = 100, SrP = 800` (Sr has 200 accrued yield → SrY = 200).
+Strategy crashes — loss of 950.
+
+**Waterfall:**
+```
+Layer 1: Jr absorbs MIN(950, 100) = 100 → Jr = 0, remaining = 850
+Layer 2: SrY absorbs MIN(850, 200) = 200 → Sr = 800, remaining = 650
+Layer 3: SrP absorbs MIN(650, 800) = 650 → Sr = 150, SrP = 150
+         emit SeniorPrincipalAbsorbed(650)
+```
+
+**End state:** `Sr = 150, Jr = 0, SrP = 150`. Senior lost 81% of principal; Junior is wiped out first. Without principal-tier separation a naive 2-layer waterfall would have absorbed identical amounts in the same order — the tracking provides observability (`SeniorPrincipalAbsorbed` event + on-chain accountability of how much principal was touched).
+
+---
+
+### Example D: Coverage & Mechanism Selection
+
+**State:** `Sr = 700, Jr = 300`
 
 ```
-cs = (700 + 100 + 200) / 700 = 1.4286 (142.86%)
-cm = (100 + 200) / 100 = 3.0 (300%)
+cs = (700 + 300) / 700 = 1.4286 (142.86%)
 ```
 
 **Senior withdraw:** Always NONE (instant).
 
-**Mezz withdraw:**
-```
-cs = 1.4286 > instantCs (1.60)? No
-cs = 1.4286 > assetLockCs (1.40)? Yes → ASSETS_LOCK
-```
-
 **Junior withdraw:**
 ```
-cs: 1.4286 > 1.60? No. > 1.40? Yes → ASSETS_LOCK
-cm: 3.0 > 1.50? Yes → NONE
-MAX(ASSETS_LOCK, NONE) = ASSETS_LOCK
+cs = 1.4286 > 1.60? No
+cs = 1.4286 > 1.40? Yes → ASSETS_LOCK   (3-day lock on sUSDai)
+```
+
+If `Jr` dropped further so `cs ≤ 1.40` (e.g. `Sr = 700, Jr = 200 → cs = 1.286`):
+```
+cs ≤ 1.40 → SHARES_LOCK   (7-day, shares escrowed, yield accrues, claim capped at +50%)
 ```
 
 ---
 
-### Example D: sUSDai Deposit Conversion
+### Example E: sUSDai Deposit Conversion
 
-**sUSDai rate:** 1 sUSDai = 1.08 USDai. User deposits 100 sUSDai into Senior vault.
+**sUSDai rate:** 1 sUSDai = 1.08 USD.AI. User deposits 100 sUSDai into Senior vault.
 
 ```
-baseAmount = sUSDai.convertToAssets(100) = 108 USDai
+baseAmount = sUSDai.convertToAssets(100) = 108 USD.AI
 
-// If vault has totalAssets=1000, totalSupply=1000 (price=1.0):
-shares = 108 × 1000 / 1000 = 108
+// If vault has totalAssets = 1000, totalSupply = 1000 (price = 1.0):
+shares     = 108 × 1000 / 1000 = 108
 
-// New state: totalAssets=1108, totalSupply=1108, price still 1.0 ✓
+// New state: totalAssets = 1108, totalSupply = 1108, price still 1.0 ✓
+// Senior principal increments by 108: SrP_new = SrP_old + 108
 ```
+
+---
+
+### Example F: Senior Withdraw — Principal Scales Pro-Rata
+
+**State pre-withdraw:** `Sr = 1000, SrP = 800` (yield SrY = 200).
+User withdraws baseAmount = 250 (25% of Sr).
+
+```
+oldSr = 1000
+Accounting.recordWithdraw(SENIOR, 250) → newSr = 750
+
+_scaleSeniorPrincipal(250):
+    newPrincipal = 800 × 750 / 1000 = 600
+    SrP: 800 → 600         (scales pro-rata)
+```
+
+**End state:** `Sr = 750, SrP = 600, SrY = 150`. The 25% of Sr withdrawn carries 25% of the principal-tier and 25% of the yield-tier with it — no free principal extraction or yield strip-mining.
+
+---
