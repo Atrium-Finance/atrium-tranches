@@ -1,4 +1,0 @@
-@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/
-@prb/math/=node_modules/@prb/math/
-@chainlink/contracts/=node_modules/@chainlink/contracts/
-@aave/v3-core/=node_modules/@aave/v3-core/
