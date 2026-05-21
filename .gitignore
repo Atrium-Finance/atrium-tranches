@@ -12,3 +12,5 @@ coverage.json
 
 .DS_Store
 *.log
+
+.claude
