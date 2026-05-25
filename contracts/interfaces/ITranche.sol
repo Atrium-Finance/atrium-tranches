@@ -17,4 +17,13 @@ interface ITranche is ICDOComponent, IPrimeVault {
      *         re-call after the Strategy's supported-token list changes.
      */
     function configure() external;
+
+    /**
+     * @notice Burns `shares` from `from` and records the corresponding
+     *         assets as an accrued protocol fee.
+     * @dev    Called by SharesCooldown when applying entry or
+     *         early-exit fees. Real body lives with the Tranche fee
+     *         spec; declared here so the silo's typed calls compile.
+     */
+    function burnSharesAsFee(uint256 shares, address from) external;
 }

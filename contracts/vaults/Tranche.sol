@@ -170,4 +170,9 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
     function redeem(address, uint256, address, address) external override returns (uint256) {
         revert NotImplemented();
     }
+
+    /** @notice Burn shares and accrue fee. Stub — deferred to a future spec. */
+    function burnSharesAsFee(uint256, address) external pure override {
+        revert NotImplemented();
+    }
 }
