@@ -79,9 +79,18 @@
 ## NatSpec
 
 - Every external and public function has NatSpec: `@notice`, `@param`, `@return`, and `@dev` for implementer notes.
-- Document custom errors with `@notice` explaining when they revert.
+- Errors and events do NOT need NatSpec — the declaration itself is the documentation. The name describes the failure / state change; parameter names describe the payload.
 - Document access control assumptions in `@dev`.
 - Interfaces carry the canonical NatSpec; implementations may add `@dev` notes but should not duplicate `@notice`.
+
+## Comments
+
+- Keep comments short, clear, and direct. No yapping.
+- A reader should grasp the function's main purpose from its `@notice` (or one-line header) alone.
+- For non-trivial math, write the formula on the line(s) directly above the implementation. The code is the implementation; the formula is the contract.
+- Comment the *why* (constraint, invariant, rounding direction, ordering requirement) — not the *what*, which the code already says.
+- Do not narrate obvious steps (`// increment i`, `// emit event`). Delete them.
+- Do not leave stale TODOs or commented-out code in production files. Track follow-ups in `progress-tracker.md`.
 
 ## Testing
 

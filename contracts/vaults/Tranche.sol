@@ -14,27 +14,16 @@ import { IStrategy } from "../interfaces/IStrategy.sol";
 import { CDOComponent } from "../base/CDOComponent.sol";
 
 /**
- * @title Tranche
- * @notice Upgradeable ERC4626 tranche vault. Withdrawal mechanics are
- *         intentionally left to subclasses or future overrides.
+ * @title  Tranche
+ * @notice Upgradeable ERC4626 tranche vault. Custom withdrawal mechanics
+ *         layered on top in a later spec.
  */
 contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
-    /**
-     * @notice Thrown by token-routed entrypoints whose implementation is deferred.
-     */
     error NotImplemented();
 
-    /**
-     * @notice Emitted when a prime-vault deposit completes (token-routed path).
-     */
     event OnPrimeDeposit(address indexed receiver, address indexed token, uint256 tokenAssets, uint256 shares);
 
-    /**
-     * @notice Initialize the tranche vault.
-     * @param asset_ Underlying ERC20 asset.
-     * @param name_ Share token name.
-     * @param symbol_ Share token symbol.
-     */
+    /** @notice Initialize the tranche vault and bind it to its CDO. */
     function initialize(IERC20 asset_, string memory name_, string memory symbol_, ICDO cdo_) public initializer {
         __ERC20_init_unchained(name_, symbol_);
         __ERC4626_init_unchained(asset_);
@@ -49,7 +38,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         address strategy = address(cdo.strategy());
         IERC20[] memory tokens = IStrategy(strategy).getSupportedTokens();
         uint256 len = tokens.length;
-        // safe: i bounded by len, len bounded by Strategy admin
+        // `i` bounded by `len`; `len` bounded by Strategy admin.
         for (uint256 i; i < len;) {
             SafeERC20.forceApprove(tokens[i], strategy, type(uint256).max);
             unchecked { ++i; }
@@ -58,7 +47,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
 
     /**
      * @notice Deposit `assets` and mint shares to `receiver`.
-     * @dev Synchronizes CDO accounting before executing the ERC4626 deposit.
+     * @dev    Syncs CDO accounting first so share price reflects fresh TVLs.
      */
     function deposit(
         uint256 assets,
@@ -70,7 +59,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
 
     /**
      * @notice Mint `shares` to `receiver`, pulling the required assets.
-     * @dev Synchronizes CDO accounting before executing the ERC4626 mint.
+     * @dev    Syncs CDO accounting first so share price reflects fresh TVLs.
      */
     function mint(
         uint256 shares,
@@ -82,8 +71,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
 
     /**
      * @notice Withdraw `assets` to `receiver`, burning shares from `owner`.
-     * @dev Synchronizes CDO accounting before executing the ERC4626 withdraw.
-     *      Custom withdrawal mechanics will be layered on top of this flow.
+     * @dev    Syncs CDO accounting first so share price reflects fresh TVLs.
      */
     function withdraw(
         uint256 assets,
@@ -96,8 +84,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
 
     /**
      * @notice Redeem `shares` from `owner`, sending assets to `receiver`.
-     * @dev Synchronizes CDO accounting before executing the ERC4626 redeem.
-     *      Custom redemption mechanics will be layered on top of this flow.
+     * @dev    Syncs CDO accounting first so share price reflects fresh TVLs.
      */
     function redeem(
         uint256 shares,
@@ -108,22 +95,14 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         assets = super.redeem(shares, receiver, owner);
     }
 
-    /**
-     * @dev Forwards the deposited assets to the CDO after the ERC4626 deposit
-     *      finalizes the share mint and the asset pull.
-     */
+    /** @dev Forward freshly-deposited assets to the CDO after ERC4626 finalises. */
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
         super._deposit(caller, receiver, assets, shares);
         cdo.deposit(address(this), asset(), assets, assets);
     }
 
     /**
-     * @notice Token-routed deposit; accepts either the native asset or a
-     *         supported prime-vault token.
-     * @dev When `token == asset()` delegates to the native ERC4626 flow.
-     *      Otherwise synchronizes CDO accounting, converts `tokenAmount` into
-     *      base assets via the strategy, previews shares, and executes the
-     *      6-arg `_deposit` flow.
+     * @notice Token-routed deposit. Native asset → ERC4626 path; alt token → meta-vault path.
      */
     function deposit(address token, uint256 tokenAmount, address receiver) public virtual override returns (uint256) {
         if (token == asset()) {
@@ -140,12 +119,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
     }
 
     /**
-     * @notice Token-routed mint; accepts either the native asset or a
-     *         supported prime-vault token.
-     * @dev When `token == asset()` delegates to the native ERC4626 mint flow.
-     *      Otherwise synchronizes CDO accounting, previews base assets,
-     *      converts to token assets via the strategy, and executes the
-     *      6-arg `_deposit` flow.
+     * @notice Token-routed mint. Native asset → ERC4626 path; alt token → meta-vault path.
      */
     function mint(address token, uint256 shares, address receiver) public virtual override returns (uint256) {
         if (token == asset()) {
@@ -163,12 +137,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         return tokenAssets;
     }
 
-    /**
-     * @dev Token-routed internal deposit flow used by both `deposit` and `mint`
-     *      prime-vault paths. Validates withdraw capacity on the source vault,
-     *      pulls the vault tokens, mints shares to `receiver`, forwards the
-     *      tokens to the CDO, and emits both `Deposit` and `OnPrimeDeposit`.
-     */
+    /** @dev Meta-vault deposit core, shared by token-routed `deposit` and `mint`. */
     function _deposit(
         address token,
         address caller,
@@ -192,18 +161,12 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         emit OnPrimeDeposit(receiver, token, tokenAssets, shares);
     }
 
-    /**
-     * @notice Token-routed withdraw; uses CDO routing and coverage-aware exit logic.
-     * @dev Stub. Implementation deferred to a future spec.
-     */
+    /** @notice Token-routed withdraw. Stub — deferred to a future spec. */
     function withdraw(address, uint256, address, address) external override returns (uint256) {
         revert NotImplemented();
     }
 
-    /**
-     * @notice Token-routed redeem; uses CDO routing and coverage-aware exit logic.
-     * @dev Stub. Implementation deferred to a future spec.
-     */
+    /** @notice Token-routed redeem. Stub — deferred to a future spec. */
     function redeem(address, uint256, address, address) external override returns (uint256) {
         revert NotImplemented();
     }
