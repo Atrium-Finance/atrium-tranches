@@ -93,6 +93,22 @@ interface ICDO {
     function exitFeeMz() external view returns (uint256);
     function exitFeeSr() external view returns (uint256);
 
+    /**
+     * @notice Reduce the protocol reserve by `amount` of `token`, sending
+     *         the tokens to the configured treasury wallet.
+     * @dev    Gated by `RESERVE_MANAGER_ROLE`. Decrements Accounting's
+     *         reserve bucket then asks Strategy to physically transfer.
+     */
+    function reduceReserve(address token, uint256 amount) external;
+
+    /**
+     * @notice Owner-only setter for the reserve treasury wallet.
+     */
+    function setReserveTreasury(address treasury_) external;
+
+    /** @notice Recipient wallet for reserve outflows. */
+    function treasury() external view returns (address);
+
     function maxWithdraw(address tranche) external view returns (uint256);
 
     function maxWithdraw(address tranche, address owner) external view returns (uint256);

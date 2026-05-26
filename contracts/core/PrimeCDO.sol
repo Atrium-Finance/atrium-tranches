@@ -2,6 +2,7 @@
 pragma solidity 0.8.35;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import { AccessControlled } from "../governance/AccessControlled.sol";
 
@@ -17,12 +18,12 @@ import { ISharesCooldown } from "../interfaces/cooldown/ISharesCooldown.sol";
  * @dev Storage layout (own tail):
  *      - _jrVault, _mezzVault, _srVault              (3 slots)
  *      - _accounting, _strategy, sharesCooldown      (3 slots)
- *      - exitFeeJr, exitFeeMz, exitFeeSr             (3 slots)
+ *      - exitFeeJr, exitFeeMz, exitFeeSr, treasury   (4 slots)
  *      - actionsJr, actionsMezz, actionsSr           (3 packed-bool slots)
- *      - __gap[43]                                   (43 slots reserved)
- *      Total reserved tail: 12 slots + __gap[43] = 55. The three
- *      `exitFee*` fields appended adjacent to `sharesCooldown`; never
- *      reorder or remove.
+ *      - __gap[42]                                   (42 slots reserved)
+ *      Total reserved tail: 13 slots + __gap[42] = 55. `treasury`
+ *      appended adjacent to the `exitFee*` group; never reorder or
+ *      remove.
  */
 contract PrimeCDO is AccessControlled, ICDO {
     /**
@@ -69,6 +70,9 @@ contract PrimeCDO is AccessControlled, ICDO {
     /** @notice Senior fallback fee (1e18) when no silo range applies. */
     uint256 public override exitFeeSr;
 
+    /** @notice Recipient wallet for reserve outflows. */
+    address public override treasury;
+
     // --- Pause state ---
     /** @notice Junior tranche action-enable flags. */
     TActionState public actionsJr;
@@ -88,6 +92,8 @@ contract PrimeCDO is AccessControlled, ICDO {
     event WithdrawalsStateChanged(address indexed tranche, bool enabled);
     event SharesCooldownChanged(address indexed sharesCooldown);
     event ExitFeesSet(uint256 jr, uint256 mz, uint256 sr);
+    event TreasurySet(address treasury);
+    event ReserveReduced(address token, uint256 amount);
 
     error NotImplemented();
     error InvalidComponent(address component, address expectedCDO, address actualCDO);
@@ -105,7 +111,7 @@ contract PrimeCDO is AccessControlled, ICDO {
     /**
      * @dev See https://docs.openzeppelin.com/upgrades-plugins/writing-upgradeable#storage-gaps
      */
-    uint256[43] private __gap;
+    uint256[42] private __gap;
 
     /**
      * @notice Initializes the PrimeCDO proxy. Components are wired separately via {config}.
@@ -375,6 +381,36 @@ contract PrimeCDO is AccessControlled, ICDO {
         exitFeeMz = mz;
         exitFeeSr = sr;
         emit ExitFeesSet(jr, mz, sr);
+    }
+
+    /**
+     * @inheritdoc ICDO
+     * @dev Owner-only. Zero rejected to keep the `treasury == address(0)`
+     *      precondition in {reduceReserve} meaningful.
+     */
+    function setReserveTreasury(address treasury_) external override onlyOwner {
+        if (treasury_ == address(0)) revert ZeroAddress();
+        treasury = treasury_;
+        emit TreasurySet(treasury_);
+    }
+
+    /**
+     * @inheritdoc ICDO
+     * @dev Order: precondition checks -> conversion -> accounting
+     *      decrement -> physical transfer. `Math.Rounding.Floor` favours
+     *      protocol when converting `tokenAmount -> baseAssets`.
+     */
+    function reduceReserve(address token, uint256 amount) external override onlyRole(RESERVE_MANAGER_ROLE) {
+        if (treasury == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+
+        uint256 baseAssets = _strategy.convertToAssets(token, amount, Math.Rounding.Floor);
+
+        _accounting.reduceReserve(baseAssets, 0, 0, 0);
+
+        _strategy.reduceReserve(token, amount, treasury);
+
+        emit ReserveReduced(token, amount);
     }
 
     function _recordWithdraw(TrancheKind kind, uint256 baseAssets) internal {
