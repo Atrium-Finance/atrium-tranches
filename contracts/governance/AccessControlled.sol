@@ -4,7 +4,7 @@ pragma solidity 0.8.35;
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { IAccessControlManager } from "../interfaces/IAccessControlManager.sol";
+import { IAccessControlManager } from "./interfaces/IAccessControlManager.sol";
 
 /**
  * @title Strata Access Control Contract.
@@ -14,14 +14,13 @@ import { IAccessControlManager } from "../interfaces/IAccessControlManager.sol";
  */
 
 abstract contract AccessControlled is Initializable, Ownable2StepUpgradeable, ReentrancyGuard {
-
-    bytes32 public constant PAUSER_ROLE                 = keccak256("PAUSER_ROLE");
-    bytes32 public constant UPDATER_CDO_APR_ROLE        = keccak256("UPDATER_CDO_APR_ROLE");
-    bytes32 public constant UPDATER_FEED_ROLE           = keccak256("UPDATER_FEED_ROLE");
-    bytes32 public constant UPDATER_STRAT_CONFIG_ROLE   = keccak256("UPDATER_STRAT_CONFIG_ROLE");
-    bytes32 public constant RESERVE_MANAGER_ROLE        = keccak256("RESERVE_MANAGER_ROLE");
-    bytes32 public constant COOLDOWN_WORKER_ROLE        = keccak256("COOLDOWN_WORKER_ROLE");
-    bytes32 public constant PROPOSER_CONFIG_ROLE        = keccak256("PROPOSER_CONFIG_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 public constant UPDATER_CDO_APR_ROLE = keccak256("UPDATER_CDO_APR_ROLE");
+    bytes32 public constant UPDATER_FEED_ROLE = keccak256("UPDATER_FEED_ROLE");
+    bytes32 public constant UPDATER_STRAT_CONFIG_ROLE = keccak256("UPDATER_STRAT_CONFIG_ROLE");
+    bytes32 public constant RESERVE_MANAGER_ROLE = keccak256("RESERVE_MANAGER_ROLE");
+    bytes32 public constant COOLDOWN_WORKER_ROLE = keccak256("COOLDOWN_WORKER_ROLE");
+    bytes32 public constant PROPOSER_CONFIG_ROLE = keccak256("PROPOSER_CONFIG_ROLE");
 
     /// @notice Access control manager contract
     IAccessControlManager public acm;
@@ -55,7 +54,6 @@ abstract contract AccessControlled is Initializable, Ownable2StepUpgradeable, Re
         require(twoStepConfigManager == _msgSender(), "ConfigManagerOnly");
         _;
     }
-
 
     function AccessControlled_init(address owner, address accessControlManager) internal onlyInitializing {
         __Ownable_init_unchained(owner);
