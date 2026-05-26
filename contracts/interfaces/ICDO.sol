@@ -26,6 +26,12 @@ interface ICDO {
 
     function strategy() external view returns (IStrategy);
 
+    /**
+     * @notice Address of the wired SharesCooldown silo. `address(0)`
+     *         when no silo is configured.
+     */
+    function sharesCooldown() external view returns (address);
+
     function totalAssets(address tranche) external view returns (uint256);
 
     function updateAccounting() external;

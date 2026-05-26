@@ -60,7 +60,7 @@ contract PrimeCDO is AccessControlled, ICDO {
      * @notice External SharesCooldown silo. May be `address(0)` —
      *         `_totalAssetsUnlocked` then falls back to raw TVL.
      */
-    address public sharesCooldown;
+    address public override sharesCooldown;
 
     // --- Per-tranche fallback exit fees ---
     /** @notice Junior fallback fee (1e18) when no silo range applies. */
