@@ -5,22 +5,24 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { AccessControlled } from "../governance/AccessControlled.sol";
 
-import { ICDO } from "../interfaces/ICDO.sol";
+import { ICDO, TExitMode } from "../interfaces/ICDO.sol";
 import { ICDOComponent } from "../interfaces/ICDOComponent.sol";
 import { ITranche } from "../interfaces/ITranche.sol";
 import { IAccounting, TrancheKind } from "../interfaces/IAccounting.sol";
 import { IStrategy } from "../interfaces/IStrategy.sol";
+import { ISharesCooldown } from "../interfaces/cooldown/ISharesCooldown.sol";
 
 /**
  * @title PrimeCDO
  * @dev Storage layout (own tail):
  *      - _jrVault, _mezzVault, _srVault              (3 slots)
  *      - _accounting, _strategy, sharesCooldown      (3 slots)
+ *      - exitFeeJr, exitFeeMz, exitFeeSr             (3 slots)
  *      - actionsJr, actionsMezz, actionsSr           (3 packed-bool slots)
- *      - __gap[46]                                   (46 slots reserved)
- *      Total reserved tail: 9 slots + __gap[46] = 55 (was 8 + __gap[47]).
- *      `sharesCooldown` is appended adjacent to the other external-component
- *      pointers; never reorder or remove.
+ *      - __gap[43]                                   (43 slots reserved)
+ *      Total reserved tail: 12 slots + __gap[43] = 55. The three
+ *      `exitFee*` fields appended adjacent to `sharesCooldown`; never
+ *      reorder or remove.
  */
 contract PrimeCDO is AccessControlled, ICDO {
     /**
@@ -38,6 +40,12 @@ contract PrimeCDO is AccessControlled, ICDO {
      */
     uint256 public constant MIN_COVERAGE = 1.05e18;
 
+    /**
+     * @notice Hard cap on the per-tranche fallback exit fee.
+     * @dev    Encoded in 1e18 precision. 0.1e18 = 10%. Anti-confiscation.
+     */
+    uint256 public constant MAX_EXIT_FEE = 0.1e18;
+
     // --- Tranche vaults ---
     ITranche internal _jrVault;
     ITranche internal _mezzVault;
@@ -52,6 +60,14 @@ contract PrimeCDO is AccessControlled, ICDO {
      *         `_totalAssetsUnlocked` then falls back to raw TVL.
      */
     address public sharesCooldown;
+
+    // --- Per-tranche fallback exit fees ---
+    /** @notice Junior fallback fee (1e18) when no silo range applies. */
+    uint256 public override exitFeeJr;
+    /** @notice Mezzanine fallback fee (1e18) when no silo range applies. */
+    uint256 public override exitFeeMz;
+    /** @notice Senior fallback fee (1e18) when no silo range applies. */
+    uint256 public override exitFeeSr;
 
     // --- Pause state ---
     /** @notice Junior tranche action-enable flags. */
@@ -71,6 +87,7 @@ contract PrimeCDO is AccessControlled, ICDO {
     event DepositsStateChanged(address indexed tranche, bool enabled);
     event WithdrawalsStateChanged(address indexed tranche, bool enabled);
     event SharesCooldownChanged(address indexed sharesCooldown);
+    event ExitFeesSet(uint256 jr, uint256 mz, uint256 sr);
 
     error NotImplemented();
     error InvalidComponent(address component, address expectedCDO, address actualCDO);
@@ -81,11 +98,14 @@ contract PrimeCDO is AccessControlled, ICDO {
     error WithdrawalsDisabled(address tranche);
     error CoverageBelowMinimum(uint256 current, uint256 postAction);
     error SharesCooldownUnchanged();
+    error ZeroAmount();
+    error WithdrawalCapReached(address tranche);
+    error InvalidExitFee(uint256 value);
 
     /**
      * @dev See https://docs.openzeppelin.com/upgrades-plugins/writing-upgradeable#storage-gaps
      */
-    uint256[46] private __gap;
+    uint256[43] private __gap;
 
     /**
      * @notice Initializes the PrimeCDO proxy. Components are wired separately via {config}.
@@ -206,8 +226,11 @@ contract PrimeCDO is AccessControlled, ICDO {
     }
 
     /**
-     * @notice Route a tranche-originated withdrawal through the coverage-aware exit path.
-     * @dev    Stub. Pause and coverage gates are wired; the real exit body lands later.
+     * @inheritdoc ICDO
+     * @dev Order: zero-amount guard -> pause -> coverage -> Strategy -> Accounting.
+     *      `owner_ == sharesCooldown` means the silo is finalising — the user has
+     *      already served the lock on the SharesCooldown side, so Strategy's own
+     *      cooldown is skipped.
      */
     function withdraw(
         address tranche,
@@ -216,21 +239,149 @@ contract PrimeCDO is AccessControlled, ICDO {
         uint256 baseAssets,
         address owner_,
         address receiver
-    ) external override onlyTranche {
+    ) external override onlyTranche nonReentrant {
+        tranche;
+        if (tokenAmount == 0 || baseAssets == 0) revert ZeroAmount();
+
         if (!_actionsOf(msg.sender).isWithdrawEnabled) {
             revert WithdrawalsDisabled(msg.sender);
         }
 
         TrancheKind kind = _kindOf(msg.sender);
         if (kind != TrancheKind.SENIOR) {
-            // Jr or Mz: enforce shared coverage buffer.
             if (baseAssets > _maxWithdraw(msg.sender)) {
                 revert CoverageBelowMinimum(_coverage(), _projectedCoverageAfterSubWithdraw(baseAssets));
             }
         }
 
-        tranche; token; tokenAmount; owner_; receiver;
-        revert NotImplemented();
+        bool isSharesLockup = owner_ == sharesCooldown && sharesCooldown != address(0);
+
+        _strategy.withdraw(msg.sender, token, tokenAmount, baseAssets, owner_, receiver, isSharesLockup);
+
+        _recordWithdraw(kind, baseAssets);
+    }
+
+    /**
+     * @inheritdoc ICDO
+     * @dev Silo-as-owner short-circuits to `ERC4626` so finalisation
+     *      doesn't re-lock. Otherwise consult the silo's coverage range;
+     *      if no lock applies, fall through to the per-tranche fallback.
+     *      Never reverts.
+     */
+    function calculateExitMode(
+        address tranche,
+        address owner
+    ) external view override returns (TExitMode mode, uint256 fee, uint32 cooldownSeconds) {
+        address silo = sharesCooldown;
+        if (silo != address(0)) {
+            if (owner == silo) {
+                return (TExitMode.ERC4626, 0, 0);
+            }
+
+            uint256 cov = _coverage();
+            ISharesCooldown.TExitParams memory exit = ISharesCooldown(silo).calculateExitParams(tranche, cov);
+
+            fee = exit.feeBps;
+
+            if (exit.sharesLock > 0) {
+                return (TExitMode.SharesLock, fee, exit.sharesLock);
+            }
+        }
+
+        if (fee == 0) {
+            TrancheKind kind = _kindOf(tranche);
+            if (kind == TrancheKind.JUNIOR) {
+                fee = exitFeeJr;
+            } else if (kind == TrancheKind.MEZZANINE) {
+                fee = exitFeeMz;
+            } else {
+                fee = exitFeeSr;
+            }
+        }
+
+        return (TExitMode.Fee, fee, 0);
+    }
+
+    /**
+     * @inheritdoc ICDO
+     * @dev Tranche transfers shares into the silo BEFORE calling this method.
+     *      No coverage gate: low coverage already routes through the silo's
+     *      harshest range — a second hard gate would block users from the
+     *      throttle that exists for that exact case.
+     */
+    function cooldownShares(
+        address tranche,
+        address token,
+        uint256 shares,
+        address sender,
+        address receiver,
+        uint256 fee,
+        uint32 cooldownSeconds
+    ) external override onlyTranche nonReentrant {
+        if (shares == 0) revert ZeroAmount();
+        if (!_actionsOf(msg.sender).isWithdrawEnabled) revert WithdrawalsDisabled(msg.sender);
+        if (sharesCooldown == address(0)) revert SharesCooldownUnchanged();
+
+        ISharesCooldown(sharesCooldown).requestRedeem(
+            ITranche(tranche),
+            token,
+            sender,
+            receiver,
+            shares,
+            fee,
+            cooldownSeconds
+        );
+    }
+
+    /**
+     * @inheritdoc ICDO
+     * @dev No `tranche == msg.sender` check — Tranche is a protocol-owned
+     *      contract trusted as a unit.
+     */
+    function accrueFee(address tranche, uint256 assets) external override onlyTranche {
+        _accounting.accrueFee(tranche, assets);
+    }
+
+    /**
+     * @inheritdoc ICDO
+     */
+    function updateBalanceFlow() external override onlyTranche {
+        _accounting.updateBalanceFlow();
+    }
+
+    /**
+     * @inheritdoc ICDO
+     */
+    function updateBalanceFlow(
+        uint256 jrIn,
+        uint256 jrOut,
+        uint256 mzIn,
+        uint256 mzOut,
+        uint256 srIn,
+        uint256 srOut
+    ) external override onlyTranche {
+        _accounting.updateBalanceFlow(jrIn, jrOut, mzIn, mzOut, srIn, srOut);
+    }
+
+    /**
+     * @inheritdoc ICDO
+     * @dev Atomic three-field setter. Each value must be `<= MAX_EXIT_FEE`.
+     */
+    function setExitFees(uint256 jr, uint256 mz, uint256 sr) external override onlyOwner {
+        if (jr > MAX_EXIT_FEE) revert InvalidExitFee(jr);
+        if (mz > MAX_EXIT_FEE) revert InvalidExitFee(mz);
+        if (sr > MAX_EXIT_FEE) revert InvalidExitFee(sr);
+        exitFeeJr = jr;
+        exitFeeMz = mz;
+        exitFeeSr = sr;
+        emit ExitFeesSet(jr, mz, sr);
+    }
+
+    function _recordWithdraw(TrancheKind kind, uint256 baseAssets) internal {
+        uint256 jrOut = kind == TrancheKind.JUNIOR ? baseAssets : 0;
+        uint256 mzOut = kind == TrancheKind.MEZZANINE ? baseAssets : 0;
+        uint256 srOut = kind == TrancheKind.SENIOR ? baseAssets : 0;
+        _accounting.updateBalanceFlow(0, jrOut, 0, mzOut, 0, srOut);
     }
 
     /**
@@ -247,11 +398,35 @@ contract PrimeCDO is AccessControlled, ICDO {
 
     /**
      * @inheritdoc ICDO
-     * @dev `owner` is reserved for future SharesCooldown integration.
+     * @dev Silo-as-owner bypasses the coverage gate and returns the
+     *      silo's locked balance for the tranche. All other owners go
+     *      through the standard coverage-gated path.
      */
-    function maxWithdraw(address tranche, address /*owner*/) external view returns (uint256) {
-        // `owner` is reserved for future SharesCooldown integration.
+    function maxWithdraw(address tranche, address owner) external view returns (uint256) {
+        if (sharesCooldown != address(0) && owner == sharesCooldown) {
+            return _maxWithdrawForSilo(tranche);
+        }
         return _maxWithdraw(tranche);
+    }
+
+    function _maxWithdrawForSilo(address tranche) internal view returns (uint256) {
+        address silo = sharesCooldown;
+        TrancheKind kind = _kindOf(tranche);
+
+        uint256 siloShares;
+        uint256 siloAssets;
+        if (kind == TrancheKind.JUNIOR) {
+            siloShares = _jrVault.balanceOf(silo);
+            siloAssets = _jrVault.convertToAssets(siloShares);
+        } else if (kind == TrancheKind.MEZZANINE) {
+            siloShares = _mezzVault.balanceOf(silo);
+            siloAssets = _mezzVault.convertToAssets(siloShares);
+        } else {
+            siloShares = _srVault.balanceOf(silo);
+            siloAssets = _srVault.convertToAssets(siloShares);
+        }
+
+        return siloAssets;
     }
 
     /**
@@ -375,7 +550,7 @@ contract PrimeCDO is AccessControlled, ICDO {
         (uint256 jr, uint256 mz, uint256 sr) = _totalAssetsUnlocked();
         if (sr == 0) return type(uint256).max;
         uint256 pool = jr + mz + sr;
-        return pool * 1e18 / sr;
+        return (pool * 1e18) / sr;
     }
 
     function _tvls() internal view returns (uint256 jr, uint256 mz, uint256 sr) {
@@ -399,7 +574,7 @@ contract PrimeCDO is AccessControlled, ICDO {
     function _maxSrDeposit() internal view returns (uint256) {
         (uint256 jr, uint256 mz, uint256 sr) = _tvls();
         // Coverage floor in absolute units: (MIN_COVERAGE - 1e18) × sr / 1e18.
-        uint256 srFloor = sr * (MIN_COVERAGE - 1e18) / 1e18;
+        uint256 srFloor = (sr * (MIN_COVERAGE - 1e18)) / 1e18;
         uint256 subordinate = jr + mz;
         if (subordinate <= srFloor) {
             // Coverage already at or below the minimum — no Sr deposit allowed.
@@ -408,7 +583,7 @@ contract PrimeCDO is AccessControlled, ICDO {
         uint256 headroom = subordinate - srFloor;
         // X = headroom / (MIN_COVERAGE - 1).  With MIN_COVERAGE = 1.05e18,
         // divisor = 0.05e18 → X = headroom × 1e18 / 0.05e18 = headroom × 20.
-        return headroom * 1e18 / (MIN_COVERAGE - 1e18);
+        return (headroom * 1e18) / (MIN_COVERAGE - 1e18);
     }
 
     function _maxWithdraw(address tranche) internal view returns (uint256) {
@@ -421,7 +596,7 @@ contract PrimeCDO is AccessControlled, ICDO {
 
         // Jr/Mz shared buffer:
         // maxWithdraw_combined = (jr + mz) - sr × (MIN_COVERAGE - 1) / 1e18
-        uint256 srFloor = sr * (MIN_COVERAGE - 1e18) / 1e18;
+        uint256 srFloor = (sr * (MIN_COVERAGE - 1e18)) / 1e18;
         uint256 subordinate = jr + mz;
         if (subordinate <= srFloor) {
             return 0;
@@ -434,7 +609,7 @@ contract PrimeCDO is AccessControlled, ICDO {
         uint256 newSr = sr + amount;
         uint256 newPool = jr + mz + newSr;
         if (newSr == 0) return type(uint256).max;
-        return newPool * 1e18 / newSr;
+        return (newPool * 1e18) / newSr;
     }
 
     function _projectedCoverageAfterSubWithdraw(uint256 amount) internal view returns (uint256) {
@@ -442,6 +617,6 @@ contract PrimeCDO is AccessControlled, ICDO {
         if (sr == 0) return type(uint256).max;
         uint256 pool = jr + mz + sr;
         uint256 newPool = pool > amount ? pool - amount : 0;
-        return newPool * 1e18 / sr;
+        return (newPool * 1e18) / sr;
     }
 }

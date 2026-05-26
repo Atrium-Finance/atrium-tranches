@@ -157,6 +157,13 @@ contract Accounting is AccessControlled, CDOComponent, IAccounting {
     /**
      * @inheritdoc IAccounting
      */
+    function updateBalanceFlow() external onlyCDO {
+        revert NotImplemented();
+    }
+
+    /**
+     * @inheritdoc IAccounting
+     */
     function accrueFee(address /*tranche*/, uint256 /*assets*/) external onlyCDO {
         revert NotImplemented();
     }

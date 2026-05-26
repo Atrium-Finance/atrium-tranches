@@ -97,6 +97,13 @@ interface IAccounting {
     ) external;
 
     /**
+     * @notice NAV-only refresh — no balance deltas to record.
+     * @dev    Called by CDO after operations that change tranche NAV
+     *         without an inbound/outbound user flow (e.g. `accrueFee`).
+     */
+    function updateBalanceFlow() external;
+
+    /**
      * @notice Move accrued fee assets from a tranche's TVL into reserve.
      * @param  tranche The tranche address. Accounting resolves to kind via CDO.
      * @param  assets  Amount of fees, in base-asset units.
