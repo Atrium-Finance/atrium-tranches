@@ -95,7 +95,6 @@ contract PrimeCDO is AccessControlled, ICDO {
     event TreasurySet(address treasury);
     event ReserveReduced(address token, uint256 amount);
 
-    error NotImplemented();
     error InvalidComponent(address component, address expectedCDO, address actualCDO);
     error UnauthorizedTranche(address caller);
     error TokenNotSupported(address token);
@@ -185,9 +184,27 @@ contract PrimeCDO is AccessControlled, ICDO {
         return _accounting;
     }
 
-    /** @notice Tranche-level total assets. Stub — implementation deferred. */
-    function totalAssets(address /*tranche*/) external view returns (uint256) {
-        revert NotImplemented();
+    /**
+     * @inheritdoc ICDO
+     * @dev Returns the tranche's TVL from Accounting's last recorded
+     *      snapshot. `Tranche.totalAssets()` forwards here to drive
+     *      ERC4626 share-price math.
+     */
+    function totalAssets(address tranche) external view returns (uint256) {
+        TrancheKind kind = _kindOf(tranche);
+        (uint256 jr, uint256 mz, uint256 sr,) = _accounting.totalAssetsT0();
+        if (kind == TrancheKind.JUNIOR) return jr;
+        if (kind == TrancheKind.MEZZANINE) return mz;
+        return sr;
+    }
+
+    /**
+     * @inheritdoc ICDO
+     * @dev Reverts `InvalidTranche` when the address is not one of
+     *      the three wired vaults. Public view — no role gate.
+     */
+    function kindOf(address tranche) external view returns (TrancheKind) {
+        return _kindOf(tranche);
     }
 
     /**
@@ -487,12 +504,12 @@ contract PrimeCDO is AccessControlled, ICDO {
      *         Uses `accounting.totalAssetsT0()` (last-recorded TVL);
      *         no fresh strategy fetch.
      */
-    function coverage() external view returns (uint256) {
+    function coverage() external view override returns (uint256) {
         return _coverage();
     }
 
     /** @notice External counterpart to `_totalAssetsUnlocked`. */
-    function totalAssetsUnlocked() external view returns (uint256 jr, uint256 mz, uint256 sr) {
+    function totalAssetsUnlocked() external view override returns (uint256 jr, uint256 mz, uint256 sr) {
         return _totalAssetsUnlocked();
     }
 
@@ -501,7 +518,7 @@ contract PrimeCDO is AccessControlled, ICDO {
      * @dev    Owner-only. Pass `address(0)` to disable silo-aware
      *         coverage entirely.
      */
-    function setSharesCooldown(address sharesCooldown_) external onlyOwner {
+    function setSharesCooldown(address sharesCooldown_) external override onlyOwner {
         if (sharesCooldown_ == sharesCooldown) {
             revert SharesCooldownUnchanged();
         }

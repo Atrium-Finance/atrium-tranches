@@ -3,6 +3,7 @@ pragma solidity 0.8.35;
 
 import { ITranche } from "./ITranche.sol";
 import { IStrategy } from "./IStrategy.sol";
+import { TrancheKind } from "./IAccounting.sol";
 
 /**
  * @notice Routing classification for tranche withdrawals.
@@ -38,7 +39,35 @@ interface ICDO {
      */
     function sharesCooldown() external view returns (address);
 
+    /**
+     * @notice Owner-only setter for the SharesCooldown silo address.
+     * @dev    Pass `address(0)` to disable silo-aware coverage.
+     */
+    function setSharesCooldown(address sharesCooldown_) external;
+
     function totalAssets(address tranche) external view returns (uint256);
+
+    /**
+     * @notice Returns the kind classification of a wired tranche.
+     * @dev    Reverts with `InvalidTranche(tranche)` when the address
+     *         is not one of the three wired vaults.
+     */
+    function kindOf(address tranche) external view returns (TrancheKind);
+
+    /**
+     * @notice TVL per tranche excluding shares parked in the
+     *         SharesCooldown silo. Falls back to raw TVL when no
+     *         silo is wired.
+     */
+    function totalAssetsUnlocked() external view returns (uint256 jr, uint256 mz, uint256 sr);
+
+    /**
+     * @notice Current protocol coverage ratio:
+     *         `(jrUnlocked + mzUnlocked + srUnlocked) / srUnlocked`,
+     *         encoded in 1e18 precision. Returns `type(uint256).max`
+     *         when unlocked Senior TVL is zero.
+     */
+    function coverage() external view returns (uint256);
 
     function updateAccounting() external;
 
