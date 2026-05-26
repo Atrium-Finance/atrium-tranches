@@ -20,8 +20,24 @@ import { CDOComponent } from "../base/CDOComponent.sol";
  *         and branches by `TExitMode` (ERC4626 / SharesLock / Fee).
  */
 contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
+    /**
+     * @notice Minimum non-zero share supply. Donation-attack mitigation —
+     *         `_onAfterWithdrawalChecks` reverts when totalSupply drops
+     *         below this floor (and stays non-zero).
+     */
+    uint256 private constant MIN_SHARES = 0.1 ether;
+
     event OnPrimeDeposit(address indexed receiver, address indexed token, uint256 tokenAssets, uint256 shares);
-    event OnPrimeWithdraw(address indexed receiver, address indexed token, uint256 tokenAssets, uint256 shares);
+
+    event OnExit(
+        address indexed receiver,
+        address indexed token,
+        uint256 tokenAssets,
+        uint256 shares,
+        TExitMode exitMode,
+        uint256 exitFee,
+        uint32 cooldownSeconds
+    );
 
     /** @notice Initialize the tranche vault and bind it to its CDO. */
     function initialize(IERC20 asset_, string memory name_, string memory symbol_, ICDO cdo_) public initializer {
@@ -223,17 +239,40 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
     }
 
     /**
-     * @notice Token-routed withdraw. User specifies `tokenAmount` of
-     *         `token` to receive; gross shares (including fee) are
-     *         burned from `owner`.
+     * @notice Token-routed withdraw (default). Forwards to the
+     *         five-arg overload with `Dynamic` — caller opts out of
+     *         mode-slippage validation.
      */
     function withdraw(address token, uint256 tokenAmount, address receiver, address owner)
-        public virtual override returns (uint256 shares)
+        public virtual override returns (uint256)
     {
+        return withdraw(
+            token,
+            tokenAmount,
+            receiver,
+            owner,
+            TRedemptionParams(TExitMode.Dynamic, 0, 0)
+        );
+    }
+
+    /**
+     * @notice Token-routed withdraw with mode-slippage guard.
+     * @dev    `params.exitMode == TExitMode.Dynamic` opts out of
+     *         validation. Otherwise all three params must equal the
+     *         CDO's live `calculateExitMode` result for this owner.
+     */
+    function withdraw(
+        address token,
+        uint256 tokenAmount,
+        address receiver,
+        address owner,
+        TRedemptionParams memory params
+    ) public virtual returns (uint256 shares) {
         cdo.updateAccounting();
 
         (TExitMode exitMode, uint256 exitFee, uint32 cooldownSec)
             = cdo.calculateExitMode(address(this), owner);
+        _validateRedemptionParams(params, exitMode, exitFee, cooldownSec);
 
         uint256 baseAssets = cdo.strategy().convertToAssets(token, tokenAmount, Math.Rounding.Floor);
 
@@ -248,12 +287,32 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
     }
 
     /**
-     * @notice Token-routed redeem. User specifies gross `shares` to
-     *         burn; `tokenAssets` of `token` are released to `receiver`.
+     * @notice Token-routed redeem (default). Forwards to the five-arg
+     *         overload with `Dynamic` — caller opts out of
+     *         mode-slippage validation.
      */
     function redeem(address token, uint256 shares, address receiver, address owner)
-        public virtual override returns (uint256 tokenAssets)
+        public virtual override returns (uint256)
     {
+        return redeem(
+            token,
+            shares,
+            receiver,
+            owner,
+            TRedemptionParams(TExitMode.Dynamic, 0, 0)
+        );
+    }
+
+    /**
+     * @notice Token-routed redeem with mode-slippage guard.
+     */
+    function redeem(
+        address token,
+        uint256 shares,
+        address receiver,
+        address owner,
+        TRedemptionParams memory params
+    ) public virtual returns (uint256 tokenAssets) {
         cdo.updateAccounting();
 
         uint256 maxShares = maxRedeem(owner);
@@ -263,6 +322,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
 
         (TExitMode exitMode, uint256 exitFee, uint32 cooldownSec)
             = cdo.calculateExitMode(address(this), owner);
+        _validateRedemptionParams(params, exitMode, exitFee, cooldownSec);
 
         uint256 baseAssets = _quoteRedeemAssets(shares, exitFee);
         tokenAssets = cdo.strategy().convertToTokens(token, baseAssets, Math.Rounding.Ceil);
@@ -337,6 +397,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         uint256 fee = baseAssetsGross > baseAssets ? baseAssetsGross - baseAssets : 0;
 
         _burn(owner, sharesGross);
+        _onAfterWithdrawalChecks();
 
         if (fee > 0) {
             cdo.accrueFee(address(this), fee);
@@ -345,7 +406,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         cdo.withdraw(address(this), token, tokenAssets, baseAssets, owner, receiver);
 
         emit Withdraw(caller, receiver, owner, baseAssets, sharesGross);
-        emit OnPrimeWithdraw(receiver, token, tokenAssets, sharesGross);
+        emit OnExit(receiver, token, tokenAssets, sharesGross, exitMode, exitFee, cooldownSec);
     }
 
     /**
@@ -369,7 +430,93 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
 
         assets = convertToShares(shares) > 0 ? super.previewRedeem(shares) : 0;
         _burn(owner, shares);
+        _onAfterWithdrawalChecks();
         cdo.accrueFee(address(this), assets);
         cdo.updateBalanceFlow();
+    }
+
+    // ---------------------------------------------------------------
+    // Internal helpers (16b)
+    // ---------------------------------------------------------------
+
+    /**
+     * @dev Reverts `RedemptionParamsMismatch` when `params` disagree
+     *      with the CDO's live mode payload. Skipped entirely when
+     *      `params.exitMode == TExitMode.Dynamic` — the caller-side
+     *      opt-out sentinel.
+     */
+    function _validateRedemptionParams(
+        TRedemptionParams memory params,
+        TExitMode exitMode,
+        uint256 exitFee,
+        uint32 cooldownSec
+    ) internal pure {
+        if (params.exitMode == TExitMode.Dynamic) return;
+        if (
+            params.exitMode != exitMode ||
+            params.exitFee != exitFee ||
+            params.cooldownSeconds != cooldownSec
+        ) {
+            revert RedemptionParamsMismatch(
+                params,
+                TRedemptionParams(exitMode, exitFee, cooldownSec)
+            );
+        }
+    }
+
+    /**
+     * @dev Donation-attack mitigation. Allows a clean drain
+     *      (`totalSupply == 0`) but rejects a residual dust holder
+     *      below `MIN_SHARES`.
+     */
+    function _onAfterWithdrawalChecks() internal view {
+        uint256 supply = totalSupply();
+        if (supply > 0 && supply < MIN_SHARES) {
+            revert MinSharesViolation();
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // External quote helpers + meta-token previews (16b)
+    // ---------------------------------------------------------------
+
+    /**
+     * @inheritdoc ITranche
+     */
+    function quoteWithdraw(uint256 assetsNet, uint256 fee)
+        public view returns (uint256 sharesGross)
+    {
+        return _quoteWithdrawShares(assetsNet, fee);
+    }
+
+    /**
+     * @inheritdoc ITranche
+     */
+    function quoteRedeem(uint256 sharesGross, uint256 fee)
+        public view returns (uint256 assetsNet)
+    {
+        return _quoteRedeemAssets(sharesGross, fee);
+    }
+
+    /**
+     * @inheritdoc ITranche
+     */
+    function previewWithdraw(address token, uint256 tokenAmount)
+        public view override returns (uint256 sharesGross)
+    {
+        uint256 baseAssets = cdo.strategy().convertToAssets(token, tokenAmount, Math.Rounding.Floor);
+        (, uint256 fee, ) = cdo.calculateExitMode(address(this), address(0));
+        sharesGross = _quoteWithdrawShares(baseAssets, fee);
+    }
+
+    /**
+     * @inheritdoc ITranche
+     */
+    function previewRedeem(address token, uint256 shares)
+        public view override returns (uint256 tokenAssetsNet)
+    {
+        (, uint256 fee, ) = cdo.calculateExitMode(address(this), address(0));
+        uint256 baseAssetsNet = _quoteRedeemAssets(shares, fee);
+        tokenAssetsNet = cdo.strategy().convertToTokens(token, baseAssetsNet, Math.Rounding.Floor);
     }
 }

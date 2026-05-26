@@ -6,11 +6,17 @@ import { IStrategy } from "./IStrategy.sol";
 
 /**
  * @notice Routing classification for tranche withdrawals.
+ * @dev    `Dynamic` is appended last so the on-chain integer encoding
+ *         of the first three modes stays stable. `cdo.calculateExitMode(...)`
+ *         never returns `Dynamic` — the sentinel is purely a caller-side
+ *         flag (used in {ITranche.TRedemptionParams} to opt out of
+ *         mode-slippage validation).
  */
 enum TExitMode {
     ERC4626,
     SharesLock,
-    Fee
+    Fee,
+    Dynamic
 }
 
 /**
