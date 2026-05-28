@@ -48,11 +48,11 @@ interface IAccounting {
     /** @notice Emitted when admin updates the Senior risk-premium parameters. */
     event RiskParametersChanged(UD60x18 riskX, UD60x18 riskY, UD60x18 riskK);
 
-    /** @notice Emitted when admin updates the Junior leverage factor. */
-    event LeverageAlphaSet(uint256 alpha);
+    /** @notice Emitted when admin updates the Jr/Mz residual-split alpha weights. */
+    event AlphaWeightsChanged(uint256 alphaJr, uint256 alphaMz);
 
-    /** @notice Emitted when admin updates the reserve rate. */
-    event ReserveRateSet(uint256 rate);
+    /** @notice Emitted when admin updates the reserve cut. */
+    event ReservePercentageChanged(uint256 reserveBps);
 
     /** @notice Emitted on every reserve reduction. */
     event ReserveReduced(
@@ -71,6 +71,24 @@ interface IAccounting {
 
     /** @notice Emitted on every fee accrual. */
     event FeeAccrued(TrancheKind kind, uint256 assets);
+
+    /**
+     * @notice Emitted when a loss event reduces Sr NAV below its
+     *         previous value (D7 / D12). Off-chain monitoring can use
+     *         this to alert governance.
+     */
+    event SeniorImpaired(uint256 lossToSenior, uint256 seniorNavAfter);
+
+    /**
+     * @notice Emitted whenever a loss is absorbed by the Jr → Mz → Sr
+     *         waterfall, with the per-tranche breakdown.
+     */
+    event LossAbsorbed(
+        uint256 totalLoss,
+        uint256 jrAbsorbed,
+        uint256 mzAbsorbed,
+        uint256 srAbsorbed
+    );
 
     // ---------------------------------------------------------------
     // State-changing — driven by CDO
@@ -146,14 +164,19 @@ interface IAccounting {
      */
     function setRiskParameters(UD60x18 riskX_, UD60x18 riskY_, UD60x18 riskK_) external;
 
-    /** @notice Admin set of the Junior leverage factor (α). */
-    function setLeverageAlpha(uint256 alpha) external;
+    /**
+     * @notice Admin set of the residual-split alpha weights for the
+     *         Jr/Mz pair. Encoded in 1e18 precision. Both must be
+     *         non-zero and `<= 10e18`.
+     */
+    function setAlphaWeights(uint256 jr, uint256 mz) external;
 
     /**
-     * @notice Admin set of the share of `netGain` routed to the reserve
-     *         on each `updateAccounting` call. Encoded in 1e18 precision.
+     * @notice Admin set of the share of the positive delta routed to
+     *         the reserve on each `updateAccounting` call. Encoded in
+     *         1e18 precision. Capped at `RESERVE_BPS_MAX` (20%).
      */
-    function setReserveRate(uint256 rate) external;
+    function setReserveBps(uint256 bps) external;
 
     // ---------------------------------------------------------------
     // Views
@@ -216,8 +239,9 @@ interface IAccounting {
     function riskY() external view returns (UD60x18);
     function riskK() external view returns (UD60x18);
 
-    function leverageAlpha() external view returns (uint256);
-    function reserveRate() external view returns (uint256);
+    function alphaJr() external view returns (uint256);
+    function alphaMz() external view returns (uint256);
+    function reserveBps() external view returns (uint256);
 
     function srtTargetIndex() external view returns (uint256);
     function lastUpdateTime() external view returns (uint256);
