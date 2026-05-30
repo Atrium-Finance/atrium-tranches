@@ -54,13 +54,8 @@ interface IAccounting {
     /** @notice Emitted when admin updates the reserve cut. */
     event ReservePercentageChanged(uint256 reserveBps);
 
-    /** @notice Emitted on every reserve reduction. */
-    event ReserveReduced(
-        uint256 totalAmount,
-        uint256 jrDistributed,
-        uint256 mzDistributed,
-        uint256 srDistributed
-    );
+    /** @notice Emitted on every reserve reduction (treasury drain). */
+    event ReserveReduced(uint256 baseAssets);
 
     /** @notice Emitted whenever a tranche balance flow is recorded. */
     event BalanceFlowUpdated(
@@ -70,7 +65,7 @@ interface IAccounting {
     );
 
     /** @notice Emitted on every fee accrual. */
-    event FeeAccrued(TrancheKind kind, uint256 assets);
+    event FeeAccrued(address indexed tranche, uint256 assets);
 
     /**
      * @notice Emitted when a loss event reduces Sr NAV below its
@@ -129,15 +124,13 @@ interface IAccounting {
     function accrueFee(address tranche, uint256 assets) external;
 
     /**
-     * @notice Reduce the reserve, optionally distributing to tranches.
-     * @dev    Driven by CDO's RESERVE_MANAGER.
+     * @notice Decrement the reserve bucket by `baseAssets` for treasury
+     *         drain.
+     * @dev    Pure 1-arg signature — no distribution to tranches.
+     *         Reserve does not redistribute, matching D6/D10 from the
+     *         loss-waterfall decisions. Driven by CDO's RESERVE_MANAGER.
      */
-    function reduceReserve(
-        uint256 totalAmount,
-        uint256 jrDistribute,
-        uint256 mzDistribute,
-        uint256 srDistribute
-    ) external;
+    function reduceReserve(uint256 baseAssets) external;
 
     // ---------------------------------------------------------------
     // State-changing — APR pipeline
@@ -213,17 +206,6 @@ interface IAccounting {
      * @dev    Reverts if `tranche` is not one of the three CDO vaults.
      */
     function totalAssets(address tranche) external view returns (uint256);
-
-    /** @notice Maximum further deposit accepted by a tranche. */
-    function maxDeposit(address tranche) external view returns (uint256);
-
-    /**
-     * @notice Maximum withdrawal a tranche can satisfy.
-     * @param  tranche       Target tranche address.
-     * @param  isSharesLockup True if the caller is the SharesCooldown silo.
-     */
-    function maxWithdraw(address tranche, bool isSharesLockup)
-        external view returns (uint256);
 
     // ---------------------------------------------------------------
     // Views — configuration getters

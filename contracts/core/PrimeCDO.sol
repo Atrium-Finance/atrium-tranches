@@ -423,7 +423,7 @@ contract PrimeCDO is AccessControlled, ICDO {
 
         uint256 baseAssets = _strategy.convertToAssets(token, amount, Math.Rounding.Floor);
 
-        _accounting.reduceReserve(baseAssets, 0, 0, 0);
+        _accounting.reduceReserve(baseAssets);
 
         _strategy.reduceReserve(token, amount, treasury);
 

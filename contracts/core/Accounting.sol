@@ -46,7 +46,6 @@ contract Accounting is AccessControlled, CDOComponent, IAccounting {
     // Errors
     // ---------------------------------------------------------------
 
-    error NotImplemented();
     error InvalidTranche(address tranche);
     error InvalidFeedDecimals(uint8 actual, uint256 expected);
     error InvalidReserveBps(uint256 bps);
@@ -54,6 +53,9 @@ contract Accounting is AccessControlled, CDOComponent, IAccounting {
     error InvalidAlphaWeights();
     error InvalidNavSplit(uint256 navT1, uint256 jr, uint256 mz, uint256 sr, uint256 reserve);
     error LossExceedsNav(uint256 loss, uint256 absorbable);
+    error FlowExceedsTvl(TrancheKind kind, uint256 amount, uint256 tvl);
+    error ZeroAmount();
+    error ReserveInsufficient(uint256 amount, uint256 reserve);
 
     // ---------------------------------------------------------------
     // Storage — tranche TVLs and total NAV
@@ -173,40 +175,80 @@ contract Accounting is AccessControlled, CDOComponent, IAccounting {
      * @inheritdoc IAccounting
      */
     function updateBalanceFlow(
-        uint256 /*jrIn*/,
-        uint256 /*jrOut*/,
-        uint256 /*mzIn*/,
-        uint256 /*mzOut*/,
-        uint256 /*srIn*/,
-        uint256 /*srOut*/
+        uint256 jrIn,
+        uint256 jrOut,
+        uint256 mzIn,
+        uint256 mzOut,
+        uint256 srIn,
+        uint256 srOut
     ) external onlyCDO {
-        revert NotImplemented();
+        // Underflow check on Out — protects against bookkeeping bugs
+        // where CDO reports a larger out than the tranche holds.
+        if (jrOut > tvlJr) revert FlowExceedsTvl(TrancheKind.JUNIOR, jrOut, tvlJr);
+        if (mzOut > tvlMz) revert FlowExceedsTvl(TrancheKind.MEZZANINE, mzOut, tvlMz);
+        if (srOut > tvlSr) revert FlowExceedsTvl(TrancheKind.SENIOR, srOut, tvlSr);
+
+        tvlJr = tvlJr + jrIn - jrOut;
+        tvlMz = tvlMz + mzIn - mzOut;
+        tvlSr = tvlSr + srIn - srOut;
+
+        nav = tvlJr + tvlMz + tvlSr + tvlReserve;
+
+        emit BalanceFlowUpdated(jrIn, jrOut, mzIn, mzOut, srIn, srOut);
     }
 
     /**
      * @inheritdoc IAccounting
      */
     function updateBalanceFlow() external onlyCDO {
-        revert NotImplemented();
+        // Pure refresh — buckets already shifted via accrueFee; only nav needs to catch up.
+        nav = tvlJr + tvlMz + tvlSr + tvlReserve;
+        emit BalanceFlowUpdated(0, 0, 0, 0, 0, 0);
     }
 
     /**
      * @inheritdoc IAccounting
+     * @dev `nav` is NOT updated here — the fee shifts value tranche → reserve
+     *      inside an already-correct total. The caller pairs this with
+     *      {updateBalanceFlow}() to refresh `nav`.
      */
-    function accrueFee(address /*tranche*/, uint256 /*assets*/) external onlyCDO {
-        revert NotImplemented();
+    function accrueFee(address tranche, uint256 assets) external onlyCDO {
+        if (assets == 0) return;
+
+        TrancheKind kind = _kindOf(tranche);
+
+        if (kind == TrancheKind.JUNIOR) {
+            if (assets > tvlJr) revert FlowExceedsTvl(kind, assets, tvlJr);
+            tvlJr -= assets;
+        } else if (kind == TrancheKind.MEZZANINE) {
+            if (assets > tvlMz) revert FlowExceedsTvl(kind, assets, tvlMz);
+            tvlMz -= assets;
+        } else {
+            if (assets > tvlSr) revert FlowExceedsTvl(kind, assets, tvlSr);
+            tvlSr -= assets;
+        }
+
+        tvlReserve += assets;
+
+        emit FeeAccrued(tranche, assets);
     }
 
     /**
      * @inheritdoc IAccounting
+     * @dev Treasury-drain semantics: full `baseAssets` leaves the protocol
+     *      via the caller's physical transfer. Reserve bucket and `nav`
+     *      both drop by the same amount.
      */
-    function reduceReserve(
-        uint256 /*totalAmount*/,
-        uint256 /*jrDistribute*/,
-        uint256 /*mzDistribute*/,
-        uint256 /*srDistribute*/
-    ) external onlyCDO {
-        revert NotImplemented();
+    function reduceReserve(uint256 baseAssets) external onlyCDO {
+        if (baseAssets == 0) revert ZeroAmount();
+        if (baseAssets > tvlReserve) {
+            revert ReserveInsufficient(baseAssets, tvlReserve);
+        }
+
+        tvlReserve -= baseAssets;
+        nav -= baseAssets;
+
+        emit ReserveReduced(baseAssets);
     }
 
     // ---------------------------------------------------------------
@@ -310,20 +352,6 @@ contract Accounting is AccessControlled, CDOComponent, IAccounting {
         if (kind == TrancheKind.JUNIOR) return tvlJr;
         if (kind == TrancheKind.MEZZANINE) return tvlMz;
         return tvlSr;
-    }
-
-    /**
-     * @inheritdoc IAccounting
-     */
-    function maxDeposit(address /*tranche*/) external view returns (uint256) {
-        revert NotImplemented();
-    }
-
-    /**
-     * @inheritdoc IAccounting
-     */
-    function maxWithdraw(address /*tranche*/, bool /*isSharesLockup*/) external view returns (uint256) {
-        revert NotImplemented();
     }
 
     // ---------------------------------------------------------------

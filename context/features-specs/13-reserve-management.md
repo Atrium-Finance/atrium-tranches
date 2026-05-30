@@ -80,37 +80,20 @@ function treasury() external view returns (address);
 `IAccounting.sol` amend — declare the reserve mutation:
 
 ```solidity
-/// @notice Decrement the reserve bucket by `baseAssets`.
-/// @dev    `jrtAmount` and `srtAmount` reserved for the future
-///         distribute flow (08c); current 13 call passes zero.
-function reduceReserve(
-    uint256 baseAssets,
-    uint256 jrtAmount,
-    uint256 srtAmount
-) external;
+/// @notice Decrement the reserve bucket by `baseAssets` for treasury
+///         drain. Pure 1-arg signature — no distribution to tranches
+///         (Reserve doesn't redistribute, matching D6 / D10 from the
+///         loss-waterfall decisions).
+function reduceReserve(uint256 baseAssets) external;
 ```
 
-(Atrium's 3-tranche version: parameters expand later in 08c to
-`(baseAssets, jrAmount, mzAmount, srAmount)`. For spec 13, the
-2-tranche-style signature with two zero tail args matches the
-reference; spec 08c rewrites.)
-
-**Alternative**: ship the 3-tranche-shape `reduceReserve(baseAssets,
-jrAmount, mzAmount, srAmount)` now so 08c doesn't need a sig
-rewrite. Open Question — defaulting to **the 4-arg version** to
-avoid churn.
-
-```solidity
-/// @notice Decrement the reserve bucket by `baseAssets`. The
-///         remaining args are reserved for the future distribute
-///         flow (08c); current 13 caller passes zero.
-function reduceReserve(
-    uint256 baseAssets,
-    uint256 jrAmount,
-    uint256 mzAmount,
-    uint256 srAmount
-) external;
-```
+**Rationale for 1-arg**: spec 13 only does treasury drain. Earlier
+drafts considered a 4-arg version `(baseAssets, jrAmount, mzAmount,
+srAmount)` to leave a hook for future reserve-to-tranche
+distribution, but per D6 (Reserve excluded from loss) the symmetric
+non-distribution stance keeps Reserve as protocol revenue only.
+Future distribution scenarios go through a separate
+`distributeReserve(...)` function added by upgrade if ever needed.
 
 ---
 
@@ -170,7 +153,7 @@ function reduceReserve(address token, uint256 amount)
     uint256 baseAssets = _strategy.convertToAssets(token, amount, Math.Rounding.Floor);
 
     // Reverts in Accounting if reserve insufficient.
-    _accounting.reduceReserve(baseAssets, 0, 0, 0);
+    _accounting.reduceReserve(baseAssets);
 
     // Strategy physically transfers tokens to treasury.
     _strategy.reduceReserve(token, amount, treasury);
@@ -227,6 +210,18 @@ Cheap defensive check. Without it, an admin could create a window
 where treasury was nulled (perhaps mid-migration) and a reserve
 manager fires a transfer to the zero address, burning the tokens.
 
+### No accounting refresh inside reduceReserve
+
+Reserve bucket grows synchronously via `accrueFee` — every fee
+accrual immediately moves the amount into the reserve bucket. Yield
+surplus does NOT flow into reserve directly; it accrues to tranche
+NAVs. So reserve bookkeeping in Accounting is never stale with
+respect to anything reduceReserve cares about.
+
+Trade-off: if the bucket needs a fresh yield flush for any reason
+(testing, audit reconciliation), admin gọi `updateBalanceFlow()` as
+a separate transaction first. The extraction path stays cheap.
+
 ---
 
 ## Non-Goals
@@ -244,8 +239,9 @@ manager fires a transfer to the zero address, burning the tokens.
 
 - `ICDO.sol` declares `reduceReserve`, `setReserveTreasury`, and
   `treasury()`.
-- `IAccounting.sol` declares the 4-arg `reduceReserve(baseAssets,
-jrAmount, mzAmount, srAmount)`. 08a body stays `NotImplemented()`.
+- `IAccounting.sol` declares `reduceReserve(uint256 baseAssets)`.
+  08a body stays `NotImplemented()` until filled by
+  update-accounting-stubs-prompt.
 - `PrimeCDO.sol`:
   - `treasury` storage added; `__gap` adjusted.
   - `setReserveTreasury(addr)` per §4.
@@ -273,6 +269,9 @@ jrAmount, mzAmount, srAmount)`. 08a body stays `NotImplemented()`.
     - Whether ops team should have a separate
       `setReserveTreasury` role rather than owner-only.
     - Whether a daily/weekly cap belongs on the extraction path.
+    - Stale-state trade-off accepted: `reduceReserve` does NOT
+      refresh Accounting first. Admin gọi `updateBalanceFlow()`
+      separately if a recent yield flush is needed. Match upstream.
     - Runtime gap on both Accounting and Strategy until 10' and 08b.
 - Spec 14 (AccessControlManager) gains one more role to register
   (RESERVE_MANAGER_ROLE).
