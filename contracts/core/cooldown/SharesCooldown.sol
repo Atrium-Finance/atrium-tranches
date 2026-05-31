@@ -16,11 +16,10 @@ import { CooldownBase } from "./CooldownBase.sol";
  */
 contract SharesCooldown is ISharesCooldown, CooldownBase {
     uint256 private constant PERCENTAGE_100 = 1e18;
-    uint256 private constant MAX_FEE_PER_DAY = 0.01e18;    // 1%/day cap
+    uint256 private constant MAX_FEE_PER_DAY = 0.01e18; // 1%/day cap
     uint256 private constant SECONDS_PER_DAY = 1 days;
 
-    mapping(address vault => mapping(address account => TRequest[]))
-        private _activeRequests;
+    mapping(address vault => mapping(address account => TRequest[])) private _activeRequests;
 
     mapping(address vault => uint256) public override vaultEarlyExitFeePerDay;
     mapping(address vault => TExitUpperBounds) private _vaultExitBounds;
@@ -41,7 +40,7 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         address to,
         uint256 shares,
         uint256 fee,
-        uint32  cooldownSeconds
+        uint32 cooldownSeconds
     ) external onlyRole(COOLDOWN_WORKER_ROLE) {
         if (shares == 0) return;
 
@@ -61,33 +60,24 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         uint256 requestsCount = requests.length;
 
         if (initialFrom != to && requestsCount >= PUBLIC_REQUEST_SLOTS_CAP) {
-            revert ExternalReceiverRequestLimitReached(
-                IERC20(address(vault)), initialFrom, to, shares
-            );
+            revert ExternalReceiverRequestLimitReached(IERC20(address(vault)), initialFrom, to, shares);
         }
 
         uint64 unlockAt = uint64(block.timestamp + cooldownSeconds);
 
         if (requestsCount < MAX_ACTIVE_REQUEST_SLOTS) {
-            if (
-                requestsCount > 0 &&
-                requests[requestsCount - 1].unlockAt == unlockAt
-            ) {
+            if (requestsCount > 0 && requests[requestsCount - 1].unlockAt == unlockAt) {
                 // Same-block request — merge with the last entry.
                 TRequest storage last = requests[requestsCount - 1];
                 last.token = token;
                 last.shares += uint192(shares);
-            } else {
-                requests.push(TRequest(unlockAt, uint192(shares), token));
-            }
+            } else requests.push(TRequest(unlockAt, uint192(shares), token));
         } else {
             // Slot cap reached — merge into last and extend unlock.
             TRequest storage last = requests[requestsCount - 1];
             last.token = token;
             last.shares += uint192(shares);
-            if (last.unlockAt < unlockAt) {
-                last.unlockAt = unlockAt;
-            }
+            if (last.unlockAt < unlockAt) last.unlockAt = unlockAt;
         }
 
         emit RequestedCooldown(address(vault), token, initialFrom, to, shares, unlockAt);
@@ -101,23 +91,23 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         return _finalizePublic(ITranche(address(vault)), address(0), user, block.timestamp);
     }
 
-    function finalize(IERC20 vault, address user, uint256 at) external returns (uint256 claimed) {
-        return _finalizePublic(ITranche(address(vault)), address(0), user, at);
+    function finalize(IERC20 vault, address user, uint256 _at) external returns (uint256 claimed) {
+        return _finalizePublic(ITranche(address(vault)), address(0), user, _at);
     }
 
     function finalize(ITranche vault, address token, address user) external returns (uint256 claimed) {
         return _finalizePublic(vault, token, user, block.timestamp);
     }
 
-    function finalize(ITranche vault, address token, address user, uint256 at)
-        external returns (uint256 claimed)
-    {
-        return _finalizePublic(vault, token, user, at);
+    function finalize(ITranche vault, address token, address user, uint256 _at) external returns (uint256 claimed) {
+        return _finalizePublic(vault, token, user, _at);
     }
 
-    function finalizeWithTokenOverride(IERC20 vault, address token, address user)
-        external onlyUser(user) returns (uint256 claimed)
-    {
+    function finalizeWithTokenOverride(
+        IERC20 vault,
+        address token,
+        address user
+    ) external onlyUser(user) returns (uint256 claimed) {
         claimed = _finalizeAll(address(vault), user, token, block.timestamp);
         emit Finalized(vault, user, claimed);
     }
@@ -160,12 +150,7 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         return sharesUser;
     }
 
-    function cancel(
-        IERC20 vault,
-        address user,
-        uint256 i,
-        TCancelGuard calldata guard
-    ) external onlyUser(user) {
+    function cancel(IERC20 vault, address user, uint256 i, TCancelGuard calldata guard) external onlyUser(user) {
         TRequest[] storage requests = _activeRequests[address(vault)][user];
         uint256 len = requests.length;
         if (i >= len) revert OutOfRange(i, len);
@@ -187,9 +172,7 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
     // Admin
     // ---------------------------------------------------------------
 
-    function setVaultExitBounds(address vault, TExitUpperBounds calldata bounds)
-        external onlyOwner
-    {
+    function setVaultExitBounds(address vault, TExitUpperBounds calldata bounds) external onlyOwner {
         if (bounds.p0 > bounds.p1) revert InvalidBounds(bounds.p0, bounds.p1);
         _vaultExitBounds[vault] = bounds;
         emit VaultCooldownBoundsUpdated(vault, bounds);
@@ -205,9 +188,7 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
     // Views
     // ---------------------------------------------------------------
 
-    function calculateExitParams(address vault, uint256 coverage_)
-        public view returns (TExitParams memory)
-    {
+    function calculateExitParams(address vault, uint256 coverage_) public view returns (TExitParams memory) {
         TExitUpperBounds memory bounds = _vaultExitBounds[vault];
         if (coverage_ <= bounds.p0) return bounds.r0;
         if (coverage_ <= bounds.p1) return bounds.r1;
@@ -218,28 +199,20 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         return _vaultExitBounds[vault];
     }
 
-    function activeRequests(address vault, address account, uint256 i)
-        external view returns (TRequest memory)
-    {
+    function activeRequests(address vault, address account, uint256 i) external view returns (TRequest memory) {
         return _activeRequests[vault][account][i];
     }
 
-    function activeRequestsLength(address vault, address account)
-        external view returns (uint256)
-    {
+    function activeRequestsLength(address vault, address account) external view returns (uint256) {
         return _activeRequests[vault][account].length;
     }
 
-    function balanceOf(IERC20 vault, address user)
-        external view returns (ICooldown.TBalanceState memory)
-    {
+    function balanceOf(IERC20 vault, address user) external view returns (ICooldown.TBalanceState memory) {
         return _balanceOf(vault, user, block.timestamp);
     }
 
-    function balanceOf(IERC20 vault, address user, uint256 at)
-        external view returns (ICooldown.TBalanceState memory)
-    {
-        return _balanceOf(vault, user, at);
+    function balanceOf(IERC20 vault, address user, uint256 _at) external view returns (ICooldown.TBalanceState memory) {
+        return _balanceOf(vault, user, _at);
     }
 
     // ---------------------------------------------------------------
@@ -250,12 +223,12 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         ITranche vault,
         address token,
         address user,
-        uint256 at
+        uint256 _at
     ) internal returns (uint256 claimed) {
         if (token == address(0)) {
-            claimed = _finalizeAll(address(vault), user, address(0), at);
+            claimed = _finalizeAll(address(vault), user, address(0), _at);
         } else {
-            (claimed, ) = _processFinalization(address(vault), user, token, address(0), at);
+            (claimed, ) = _processFinalization(address(vault), user, token, address(0), _at);
         }
         if (claimed == 0) revert NothingToFinalize();
         emit Finalized(IERC20(address(vault)), user, claimed);
@@ -265,16 +238,21 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         address vault,
         address user,
         address overrideToken,
-        uint256 at
+        uint256 _at
     ) internal returns (uint256 claimed) {
         if (overrideToken != address(0)) {
-            (claimed, ) = _processFinalization(vault, user, address(0), overrideToken, at);
+            (claimed, ) = _processFinalization(vault, user, address(0), overrideToken, _at);
             return claimed;
         }
         address finalizeToken = ITranche(vault).asset();
         while (true) {
-            (uint256 singleClaimed, address nextToken) =
-                _processFinalization(vault, user, finalizeToken, overrideToken, at);
+            (uint256 singleClaimed, address nextToken) = _processFinalization(
+                vault,
+                user,
+                finalizeToken,
+                overrideToken,
+                _at
+            );
             claimed += singleClaimed;
             if (nextToken == address(0)) break;
             finalizeToken = nextToken;
@@ -286,9 +264,9 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         address user,
         address token,
         address overrideToken,
-        uint256 at
+        uint256 _at
     ) internal returns (uint256 claimed, address nextToken) {
-        if (at > block.timestamp) revert InvalidTime();
+        if (_at > block.timestamp) revert InvalidTime();
         // either `token` filters per-request, or `overrideToken` is
         // the redemption asset for matched requests
         if (token == address(0) && overrideToken == address(0)) revert UnsupportedToken(address(0));
@@ -297,16 +275,20 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         bool isCooldownActive = _isCooldownActive(vault);
 
         uint256 len = requests.length;
-        for (uint256 i; i < len;) {
+        for (uint256 i; i < len; ) {
             TRequest memory req = requests[i];
-            if (isCooldownActive && req.unlockAt > at) {
+            if (isCooldownActive && req.unlockAt > _at) {
                 // still pending
-                unchecked { i++; }
+                unchecked {
+                    i++;
+                }
                 continue;
             }
             if (token != address(0) && token != req.token) {
                 if (nextToken == address(0)) nextToken = req.token;
-                unchecked { i++; }
+                unchecked {
+                    i++;
+                }
                 continue;
             }
 
@@ -315,7 +297,9 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
             // Swap-pop.
             if (i < len - 1) requests[i] = requests[len - 1];
             requests.pop();
-            unchecked { len--; }
+            unchecked {
+                len--;
+            }
         }
 
         if (claimed > 0) {
@@ -324,9 +308,11 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         }
     }
 
-    function _balanceOf(IERC20 vault, address user, uint256 at)
-        internal view returns (ICooldown.TBalanceState memory)
-    {
+    function _balanceOf(
+        IERC20 vault,
+        address user,
+        uint256 _at
+    ) internal view returns (ICooldown.TBalanceState memory) {
         TRequest[] storage requests = _activeRequests[address(vault)][user];
         bool isCooldownActive = _isCooldownActive(address(vault));
 
@@ -338,37 +324,38 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
 
         for (uint256 i; i < len; i++) {
             TRequest memory req = requests[i];
-            if (isCooldownActive && req.unlockAt > at) {
+            if (isCooldownActive && req.unlockAt > _at) {
                 pending += req.shares;
                 if (nextUnlockAt == 0 || req.unlockAt < nextUnlockAt) {
                     nextUnlockAt = req.unlockAt;
                     nextUnlockAmount = req.shares;
                     continue;
                 }
-                if (req.unlockAt == nextUnlockAt) {
-                    nextUnlockAmount += req.shares;
-                }
+                if (req.unlockAt == nextUnlockAt) nextUnlockAmount += req.shares;
                 continue;
             }
             claimable += req.shares;
         }
 
-        return ICooldown.TBalanceState({
-            pending: pending,
-            claimable: claimable,
-            nextUnlockAt: nextUnlockAt,
-            nextUnlockAmount: nextUnlockAmount,
-            totalRequests: len
-        });
+        return
+            ICooldown.TBalanceState({
+                pending: pending,
+                claimable: claimable,
+                nextUnlockAt: nextUnlockAt,
+                nextUnlockAmount: nextUnlockAmount,
+                totalRequests: len
+            });
     }
 
     // ---------------------------------------------------------------
     // Internal — fee / helpers
     // ---------------------------------------------------------------
 
-    function _accrueFee(ITranche vault, uint256 shares, uint256 feeBps)
-        internal returns (uint256 sharesUser, uint256 sharesFee)
-    {
+    function _accrueFee(
+        ITranche vault,
+        uint256 shares,
+        uint256 feeBps
+    ) internal returns (uint256 sharesUser, uint256 sharesFee) {
         sharesFee = Math.mulDiv(shares, feeBps, PERCENTAGE_100, Math.Rounding.Floor);
         sharesUser = shares > sharesFee ? shares - sharesFee : 0;
         if (sharesUser == 0 || sharesFee == 0) revert EmptyFee();
