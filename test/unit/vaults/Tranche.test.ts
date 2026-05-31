@@ -258,4 +258,190 @@ describe("Tranche", () => {
       expect(rec.status).to.equal("success");
     });
   });
+
+  describe("SharesLock mode + allowance + standard withdraw", () => {
+    it("26. SharesLock mode transfers shares to silo, no burn", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      await seedDeposit(ctx, parseUnits("100", 18));
+      // Wire a silo address on MockCDO and switch mode to SharesLock.
+      await ctx.mockCDO.write.setSharesCooldown([ctx.rest[0].account.address]);
+      await ctx.mockCDO.write.setExitMode([TExitMode.SharesLock, 0n, 86400]);
+
+      const userBefore = await ctx.tranche.read.balanceOf([ctx.user.account.address]);
+      const siloBefore = await ctx.tranche.read.balanceOf([ctx.rest[0].account.address]);
+
+      await ctx.tranche.write.redeem(
+        [parseUnits("30", 18), ctx.user.account.address, ctx.user.account.address],
+        { account: ctx.user.account },
+      );
+
+      const userAfter = await ctx.tranche.read.balanceOf([ctx.user.account.address]);
+      const siloAfter = await ctx.tranche.read.balanceOf([ctx.rest[0].account.address]);
+      expect(userBefore - userAfter).to.equal(parseUnits("30", 18));
+      expect(siloAfter - siloBefore).to.equal(parseUnits("30", 18));
+      // totalSupply unchanged (no burn in SharesLock).
+      expect(await ctx.tranche.read.totalSupply()).to.equal(userBefore);
+    });
+
+    it("27. Withdraw spends allowance when caller != owner", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      await seedDeposit(ctx, parseUnits("100", 18));
+      // user approves keeper for 50 shares.
+      await ctx.tranche.write.approve([ctx.keeper.account.address, parseUnits("50", 18)], {
+        account: ctx.user.account,
+      });
+      await ctx.tranche.write.redeem(
+        [parseUnits("50", 18), ctx.keeper.account.address, ctx.user.account.address],
+        { account: ctx.keeper.account },
+      );
+      // Allowance was spent.
+      const remaining = await ctx.tranche.read.allowance([ctx.user.account.address, ctx.keeper.account.address]);
+      expect(remaining).to.equal(0n);
+    });
+
+    it("28. Standard withdraw(assets, receiver, owner) delegates to token-routed", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      await seedDeposit(ctx, parseUnits("100", 18));
+      await ctx.tranche.write.withdraw(
+        [parseUnits("40", 18), ctx.user.account.address, ctx.user.account.address],
+        { account: ctx.user.account },
+      );
+      expect(await ctx.tranche.read.balanceOf([ctx.user.account.address])).to.equal(parseUnits("60", 18));
+    });
+
+    it("29. 5-arg strict redeem succeeds when params match current mode", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      await seedDeposit(ctx, parseUnits("100", 18));
+      // Default mode is ERC4626 with zero fee, zero cooldown.
+      const params = { exitMode: TExitMode.ERC4626, exitFee: 0n, cooldownSeconds: 0 };
+      await ctx.tranche.write.redeem(
+        [ctx.usdai.address, parseUnits("25", 18), ctx.user.account.address, ctx.user.account.address, params],
+        { account: ctx.user.account },
+      );
+      expect(await ctx.tranche.read.balanceOf([ctx.user.account.address])).to.equal(parseUnits("75", 18));
+    });
+
+    it("30. 5-arg strict withdraw with Dynamic params skips validation", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      await seedDeposit(ctx, parseUnits("100", 18));
+      const params = { exitMode: TExitMode.Dynamic, exitFee: 0n, cooldownSeconds: 0 };
+      await ctx.tranche.write.withdraw(
+        [ctx.usdai.address, parseUnits("25", 18), ctx.user.account.address, ctx.user.account.address, params],
+        { account: ctx.user.account },
+      );
+      expect(await ctx.tranche.read.balanceOf([ctx.user.account.address])).to.equal(parseUnits("75", 18));
+    });
+  });
+
+  describe("meta-token deposit/mint/maxWithdraw", () => {
+    it("31. mint(token=asset, shares, receiver) delegates to native mint", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      await ctx.usdai.write.mint([ctx.user.account.address, parseUnits("5", 18)]);
+      await ctx.usdai.write.approve([ctx.tranche.address, parseUnits("5", 18)], { account: ctx.user.account });
+      await ctx.tranche.write.mint(
+        [ctx.usdai.address, parseUnits("5", 18), ctx.user.account.address],
+        { account: ctx.user.account },
+      );
+      expect(await ctx.tranche.read.balanceOf([ctx.user.account.address])).to.equal(parseUnits("5", 18));
+    });
+
+    it("32. maxWithdraw(token, owner) meta-token overload returns tokens via Strategy convert", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      // MockStrategy converts 1:1; MockCDO.maxWithdraw returns 1e30.
+      const v = await ctx.tranche.read.maxWithdraw([ctx.usdai.address, ctx.user.account.address]);
+      expect(v).to.equal(10n ** 30n);
+    });
+  });
+
+  describe("burnSharesAsFee guards", () => {
+    it("33. burnSharesAsFee with caller == owner spends no allowance", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      await seedDeposit(ctx, parseUnits("100", 18));
+      await ctx.tranche.write.burnSharesAsFee([parseUnits("10", 18), ctx.user.account.address], {
+        account: ctx.user.account,
+      });
+      expect(await ctx.tranche.read.balanceOf([ctx.user.account.address])).to.equal(parseUnits("90", 18));
+    });
+
+    it("34. burnSharesAsFee with caller != owner consumes allowance", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      await seedDeposit(ctx, parseUnits("100", 18));
+      await ctx.tranche.write.approve([ctx.keeper.account.address, parseUnits("20", 18)], {
+        account: ctx.user.account,
+      });
+      await ctx.tranche.write.burnSharesAsFee([parseUnits("20", 18), ctx.user.account.address], {
+        account: ctx.keeper.account,
+      });
+      expect(await ctx.tranche.read.allowance([ctx.user.account.address, ctx.keeper.account.address])).to.equal(0n);
+    });
+  });
+
+  describe("meta-vault deposit/mint (token != asset)", () => {
+    // Adds sUSDai as a second supported token, seeds the user with sUSDai
+    // by depositing USDai into the sUSDai vault, then drives Tranche's
+    // token-routed deposit/mint path (lines 173-213 of Tranche.sol).
+    async function metaVaultCtx() {
+      const ctx = await loadFixture(trancheFixture);
+      const susdai = await viem.deployContract("MockSUSDai", [ctx.usdai.address]);
+      await ctx.mockStrategy.write.setSupportedTokens([[susdai.address, ctx.usdai.address]]);
+
+      await ctx.usdai.write.mint([ctx.user.account.address, parseUnits("100", 18)]);
+      await ctx.usdai.write.approve([susdai.address, parseUnits("100", 18)], { account: ctx.user.account });
+      await susdai.write.deposit([parseUnits("100", 18), ctx.user.account.address], { account: ctx.user.account });
+      await susdai.write.approve([ctx.tranche.address, MAX_U256], { account: ctx.user.account });
+      return { ...ctx, susdai };
+    }
+
+    it("35. deposit(token=sUSDai, amount, receiver) routes through meta-vault path", async () => {
+      const ctx = await metaVaultCtx();
+      await ctx.tranche.write.deposit(
+        [ctx.susdai.address, parseUnits("10", 18), ctx.user.account.address],
+        { account: ctx.user.account },
+      );
+      expect(await ctx.tranche.read.balanceOf([ctx.user.account.address])).to.equal(parseUnits("10", 18));
+    });
+
+    it("36. mint(token=sUSDai, shares, receiver) routes through meta-vault path", async () => {
+      const ctx = await metaVaultCtx();
+      await ctx.tranche.write.mint(
+        [ctx.susdai.address, parseUnits("8", 18), ctx.user.account.address],
+        { account: ctx.user.account },
+      );
+      expect(await ctx.tranche.read.balanceOf([ctx.user.account.address])).to.equal(parseUnits("8", 18));
+    });
+
+    it("37. meta-vault deposit emits OnPrimeDeposit", async () => {
+      const ctx = await metaVaultCtx();
+      const hash = await ctx.tranche.write.deposit(
+        [ctx.susdai.address, parseUnits("5", 18), ctx.user.account.address],
+        { account: ctx.user.account },
+      );
+      const rec = await ctx.publicClient.waitForTransactionReceipt({ hash });
+      expect(rec.status).to.equal("success");
+    });
+  });
+
+  describe("misc view branches", () => {
+    it("38. maxMint returns MAX sentinel when CDO maxDeposit is MAX", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      // MockCDO.maxDeposit returns type(uint256).max → sentinel branch.
+      expect(await ctx.tranche.read.maxMint([ctx.user.account.address])).to.equal(MAX_U256);
+    });
+
+    it("39. previewRedeem fee-aware against seeded supply (covers super.previewRedeem call)", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      await seedDeposit(ctx, parseUnits("100", 18));
+      await ctx.mockCDO.write.setExitMode([TExitMode.Fee, parseUnits("0.01", 18), 0]);
+      const out = await ctx.tranche.read.previewRedeem([parseUnits("10", 18)]);
+      expect(out < parseUnits("10", 18)).to.equal(true);
+    });
+
+    it("40. previewWithdraw fee-aware against seeded supply", async () => {
+      const ctx = await loadFixture(trancheFixture);
+      await seedDeposit(ctx, parseUnits("100", 18));
+      await ctx.mockCDO.write.setExitMode([TExitMode.Fee, parseUnits("0.01", 18), 0]);
+      const out = await ctx.tranche.read.previewWithdraw([parseUnits("10", 18)]);
+      expect(out > parseUnits("10", 18)).to.equal(true);
+    });
+  });
 });

@@ -34,3 +34,11 @@ export const time = {
     await (await nh()).time.setNextBlockTimestamp(Number(ts));
   },
 };
+
+export async function impersonateAccount(addr: string): Promise<void> {
+  await (await nh()).impersonateAccount(addr);
+}
+
+export async function setBalance(addr: string, balance: bigint): Promise<void> {
+  await (await nh()).setBalance(addr, balance);
+}

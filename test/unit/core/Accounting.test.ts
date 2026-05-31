@@ -356,4 +356,171 @@ describe("Accounting", () => {
       ).to.be.rejected;
     });
   });
+
+  describe("flow + fee uncovered branches", () => {
+    it("33. updateBalanceFlow with jrOut > tvlJr reverts FlowExceedsTvl(JUNIOR)", async () => {
+      const { mockCDO } = await loadFixture(accountingFixture);
+      await expect(
+        mockCDO.write.callUpdateBalanceFlow([0n, parseUnits("1", 18), 0n, 0n, 0n, 0n]),
+      ).to.be.rejected;
+    });
+
+    it("34. updateBalanceFlow with mzOut > tvlMz reverts FlowExceedsTvl(MEZZANINE)", async () => {
+      const { mockCDO } = await loadFixture(accountingFixture);
+      await expect(
+        mockCDO.write.callUpdateBalanceFlow([0n, 0n, 0n, parseUnits("1", 18), 0n, 0n]),
+      ).to.be.rejected;
+    });
+
+    it("35. updateBalanceFlow with srOut > tvlSr reverts FlowExceedsTvl(SENIOR)", async () => {
+      const { mockCDO } = await loadFixture(accountingFixture);
+      await expect(
+        mockCDO.write.callUpdateBalanceFlow([0n, 0n, 0n, 0n, 0n, parseUnits("1", 18)]),
+      ).to.be.rejected;
+    });
+
+    it("36. updateBalanceFlow() no-arg refreshes nav from buckets", async () => {
+      const { accounting, mockCDO } = await loadFixture(accountingFixture);
+      await mockCDO.write.callUpdateBalanceFlow([
+        parseUnits("10", 18), 0n, parseUnits("20", 18), 0n, parseUnits("30", 18), 0n,
+      ]);
+      await mockCDO.write.callUpdateBalanceFlowNoArg();
+      // nav reflected.
+      const [jr, mz, sr] = await accounting.read.totalAssetsT0();
+      expect(jr + mz + sr).to.equal(parseUnits("60", 18));
+    });
+
+    it("37. accrueFee MEZZANINE branch debits tvlMz, credits reserve", async () => {
+      const { accounting, mockCDO, user, keeper, treasury } = await loadFixture(accountingFixture);
+      await mockCDO.write.setVaults([user.account.address, keeper.account.address, treasury.account.address]);
+      await mockCDO.write.callUpdateBalanceFlow([
+        0n, 0n, parseUnits("100", 18), 0n, 0n, 0n,
+      ]);
+      await mockCDO.write.callAccrueFee([keeper.account.address, parseUnits("5", 18)]);
+      const [, mz, , reserve] = await accounting.read.totalAssetsT0();
+      expect(mz).to.equal(parseUnits("95", 18));
+      expect(reserve).to.equal(parseUnits("5", 18));
+    });
+
+    it("38. accrueFee SENIOR branch debits tvlSr, credits reserve", async () => {
+      const { accounting, mockCDO, user, keeper, treasury } = await loadFixture(accountingFixture);
+      await mockCDO.write.setVaults([user.account.address, keeper.account.address, treasury.account.address]);
+      await mockCDO.write.callUpdateBalanceFlow([
+        0n, 0n, 0n, 0n, parseUnits("100", 18), 0n,
+      ]);
+      await mockCDO.write.callAccrueFee([treasury.account.address, parseUnits("7", 18)]);
+      const [, , sr, reserve] = await accounting.read.totalAssetsT0();
+      expect(sr).to.equal(parseUnits("93", 18));
+      expect(reserve).to.equal(parseUnits("7", 18));
+    });
+
+    it("39. accrueFee with assets > tranche bucket reverts FlowExceedsTvl", async () => {
+      const { mockCDO, user, keeper, treasury } = await loadFixture(accountingFixture);
+      await mockCDO.write.setVaults([user.account.address, keeper.account.address, treasury.account.address]);
+      await mockCDO.write.callUpdateBalanceFlow([
+        parseUnits("10", 18), 0n, 0n, 0n, 0n, 0n,
+      ]);
+      await expect(
+        mockCDO.write.callAccrueFee([user.account.address, parseUnits("100", 18)]),
+      ).to.be.rejected;
+    });
+
+    it("40. accrueFee with assets=0 is a no-op (no revert, no state change)", async () => {
+      const { accounting, mockCDO, user, keeper, treasury } = await loadFixture(accountingFixture);
+      await mockCDO.write.setVaults([user.account.address, keeper.account.address, treasury.account.address]);
+      const [jrBefore, , , resBefore] = await accounting.read.totalAssetsT0();
+      await mockCDO.write.callAccrueFee([user.account.address, 0n]);
+      const [jrAfter, , , resAfter] = await accounting.read.totalAssetsT0();
+      expect(jrAfter).to.equal(jrBefore);
+      expect(resAfter).to.equal(resBefore);
+    });
+
+    it("41. reduceReserve happy path drains tvlReserve and drops nav", async () => {
+      const { accounting, mockCDO, user, keeper, treasury } = await loadFixture(accountingFixture);
+      await mockCDO.write.setVaults([user.account.address, keeper.account.address, treasury.account.address]);
+      // Seed reserve via fee accrual (Jr bucket → reserve).
+      await mockCDO.write.callUpdateBalanceFlow([
+        parseUnits("100", 18), 0n, 0n, 0n, 0n, 0n,
+      ]);
+      await mockCDO.write.callAccrueFee([user.account.address, parseUnits("10", 18)]);
+      await mockCDO.write.callReduceReserve([parseUnits("4", 18)]);
+      const [, , , reserve] = await accounting.read.totalAssetsT0();
+      expect(reserve).to.equal(parseUnits("6", 18));
+    });
+
+    it("42. reduceReserve(0) reverts ZeroAmount", async () => {
+      const { mockCDO } = await loadFixture(accountingFixture);
+      await expect(mockCDO.write.callReduceReserve([0n])).to.be.rejected;
+    });
+  });
+
+  describe("Setters happy paths + views", () => {
+    it("43. setRiskParameters with x+y < 1e18 writes + recomputes aprSrt", async () => {
+      const { accounting, acm, owner } = await loadFixture(accountingFixture);
+      const role = await accounting.read.UPDATER_STRAT_CONFIG_ROLE();
+      await acm.write.grantRole([role, owner.account.address]);
+      await accounting.write.setRiskParameters([
+        parseUnits("0.1", 18), parseUnits("0.1", 18), parseUnits("0.5", 18),
+      ]);
+      expect(await accounting.read.riskX()).to.equal(parseUnits("0.1", 18));
+      expect(await accounting.read.riskY()).to.equal(parseUnits("0.1", 18));
+      expect(await accounting.read.riskK()).to.equal(parseUnits("0.5", 18));
+    });
+
+    it("44. setReserveBps writes within bound (≤ 20%)", async () => {
+      const { accounting } = await loadFixture(accountingFixture);
+      await accounting.write.setReserveBps([parseUnits("0.1", 18)]);
+      expect(await accounting.read.reserveBps()).to.equal(parseUnits("0.1", 18));
+    });
+
+    it("45. setReserveBps > 20% reverts InvalidReserveBps", async () => {
+      const { accounting } = await loadFixture(accountingFixture);
+      await expect(accounting.write.setReserveBps([parseUnits("0.21", 18)])).to.be.rejected;
+    });
+
+    it("46. setAlphaWeights writes new alpha pair", async () => {
+      const { accounting } = await loadFixture(accountingFixture);
+      await accounting.write.setAlphaWeights([parseUnits("3", 18), parseUnits("2", 18)]);
+      expect(await accounting.read.alphaJr()).to.equal(parseUnits("3", 18));
+      expect(await accounting.read.alphaMz()).to.equal(parseUnits("2", 18));
+    });
+
+    it("47. setAlphaWeights with zero rejected (InvalidAlphaWeights)", async () => {
+      const { accounting } = await loadFixture(accountingFixture);
+      await expect(accounting.write.setAlphaWeights([0n, parseUnits("1", 18)])).to.be.rejected;
+    });
+
+    it("48. setAprPairFeed with non-zero validates decimals", async () => {
+      const { accounting } = await loadFixture(accountingFixture);
+      // MockAprPairFeed reports decimals=12 (matching APR_FEED_DECIMALS) → accepted.
+      const newFeed = await viem.deployContract("MockAprPairFeed");
+      await accounting.write.setAprPairFeed([newFeed.address]);
+    });
+
+    it("49. setAprPairFeed(address(0)) detaches feed (no decimals check)", async () => {
+      const { accounting } = await loadFixture(accountingFixture);
+      await accounting.write.setAprPairFeed([zeroAddress]);
+    });
+
+    it("50. totalAssets(navT1) returns calculateNAVSplit projection", async () => {
+      const { accounting } = await loadFixture(accountingFixture);
+      const [jr, mz, sr, reserve] = await accounting.read.totalAssets([parseUnits("100", 18)]);
+      // Bootstrap branch (all zero) → entire navT1 to reserve.
+      expect(jr).to.equal(0n);
+      expect(mz).to.equal(0n);
+      expect(sr).to.equal(0n);
+      expect(reserve).to.equal(parseUnits("100", 18));
+    });
+
+    it("51. totalAssets(tranche=jr) returns tvlJr bucket", async () => {
+      const { accounting, mockCDO, user, keeper, treasury } = await loadFixture(accountingFixture);
+      await mockCDO.write.setVaults([user.account.address, keeper.account.address, treasury.account.address]);
+      await mockCDO.write.callUpdateBalanceFlow([
+        parseUnits("11", 18), 0n, parseUnits("22", 18), 0n, parseUnits("33", 18), 0n,
+      ]);
+      expect(await accounting.read.totalAssets([user.account.address])).to.equal(parseUnits("11", 18));
+      expect(await accounting.read.totalAssets([keeper.account.address])).to.equal(parseUnits("22", 18));
+      expect(await accounting.read.totalAssets([treasury.account.address])).to.equal(parseUnits("33", 18));
+    });
+  });
 });

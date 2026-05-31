@@ -7,8 +7,11 @@ artifacts
 typechain-types
 ignition/deployments
 
-coverage
+coverage/
 coverage.json
+.coverage_artifacts/
+.coverage_cache/
+.coverage_contracts/
 
 .DS_Store
 *.log

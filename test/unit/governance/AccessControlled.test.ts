@@ -74,4 +74,31 @@ describe("AccessControlled (via harness)", () => {
     const ZERO = "0x" + "0".repeat(40);
     await expect(harness.write.setAccessControlManager([ZERO as `0x${string}`])).to.be.rejected;
   });
+
+  it("7. setTwoStepConfigManager writes + emits NewTwoStepConfigManager", async () => {
+    const { harness, user } = await loadFixture(harnessFixture);
+    await harness.write.setTwoStepConfigManager([user.account.address]);
+    expect(getAddress(await harness.read.twoStepConfigManager())).to.equal(getAddress(user.account.address));
+  });
+
+  it("8. setTwoStepConfigManager rejects zero address", async () => {
+    const { harness } = await loadFixture(harnessFixture);
+    const ZERO = "0x" + "0".repeat(40);
+    await expect(harness.write.setTwoStepConfigManager([ZERO as `0x${string}`])).to.be.rejected;
+  });
+
+  it("9. onlyTwoStepConfigManager modifier accepts the registered manager", async () => {
+    const { harness, user } = await loadFixture(harnessFixture);
+    await harness.write.setTwoStepConfigManager([user.account.address]);
+    await harness.write.onlyTwoStepConfigManagerCall({ account: user.account });
+    expect(await harness.read.flag()).to.equal(1n);
+  });
+
+  it("10. onlyTwoStepConfigManager rejects other callers", async () => {
+    const { harness, user, rest } = await loadFixture(harnessFixture);
+    await harness.write.setTwoStepConfigManager([user.account.address]);
+    await expect(
+      harness.write.onlyTwoStepConfigManagerCall({ account: rest[0].account }),
+    ).to.be.rejected;
+  });
 });

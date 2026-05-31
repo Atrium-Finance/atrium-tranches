@@ -26,4 +26,8 @@ contract MockAccessControlledHarness is AccessControlled {
         _checkAccessAllowed(this.checkAccessCall.selector);
         flag += 1;
     }
+
+    function onlyTwoStepConfigManagerCall() external onlyTwoStepConfigManager {
+        flag += 1;
+    }
 }

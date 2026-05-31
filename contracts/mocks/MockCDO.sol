@@ -127,6 +127,46 @@ contract MockCDO is ICDO {
         accounting.updateBalanceFlow();
     }
 
+    // Strategy forwarders — let unit tests drive Strategy as if MockCDO is
+    // the gating PrimeCDO. Real coverage / pause checks are skipped.
+
+    function callStrategyDeposit(
+        address tranche,
+        address token,
+        uint256 tokenAmount,
+        uint256 baseAssets,
+        address owner
+    ) external returns (uint256) {
+        return strategy.deposit(tranche, token, tokenAmount, baseAssets, owner);
+    }
+
+    function callStrategyWithdraw6(
+        address tranche,
+        address token,
+        uint256 tokenAmount,
+        uint256 baseAssets,
+        address sender,
+        address receiver
+    ) external returns (uint256) {
+        return strategy.withdraw(tranche, token, tokenAmount, baseAssets, sender, receiver);
+    }
+
+    function callStrategyWithdraw7(
+        address tranche,
+        address token,
+        uint256 tokenAmount,
+        uint256 baseAssets,
+        address sender,
+        address receiver,
+        bool shouldSkipCooldown
+    ) external returns (uint256) {
+        return strategy.withdraw(tranche, token, tokenAmount, baseAssets, sender, receiver, shouldSkipCooldown);
+    }
+
+    function callStrategyReduceReserve(address token, uint256 amount, address treasuryAddr) external {
+        strategy.reduceReserve(token, amount, treasuryAddr);
+    }
+
     // Internal -----------------------------------------------------
 
     function _kindOf(address tranche) internal view returns (TrancheKind) {

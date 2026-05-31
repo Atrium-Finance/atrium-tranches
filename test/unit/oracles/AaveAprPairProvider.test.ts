@@ -256,5 +256,28 @@ describe("AaveAprPairProvider", () => {
       const { provider } = await loadFixture(deployProvider);
       await expect(provider.write.setBenchmarkTokens([[zeroAddress]])).to.be.rejected;
     });
+
+    it("24. benchmarkTokens() view returns the configured list", async () => {
+      const { provider, aave } = await loadFixture(deployProvider);
+      const usdc = await viem.deployContract("MockERC20", ["USDC", "USDC", 6]);
+      const aUSDC = await viem.deployContract("MockERC20", ["aUSDC", "aUSDC", 6]);
+      await aave.write.setReserve([usdc.address, rayFromPct(5), aUSDC.address]);
+      await provider.write.setBenchmarkTokens([[usdc.address]]);
+      const list = await provider.read.benchmarkTokens();
+      expect(list.length).to.equal(1);
+      expect(getAddress(list[0])).to.equal(getAddress(usdc.address));
+    });
+
+    it("25. benchmarkTokensLength() view returns the configured count", async () => {
+      const { provider, aave } = await loadFixture(deployProvider);
+      const t1 = await viem.deployContract("MockERC20", ["T1", "T1", 6]);
+      const t2 = await viem.deployContract("MockERC20", ["T2", "T2", 6]);
+      const a1 = await viem.deployContract("MockERC20", ["aT1", "aT1", 6]);
+      const a2 = await viem.deployContract("MockERC20", ["aT2", "aT2", 6]);
+      await aave.write.setReserve([t1.address, rayFromPct(1), a1.address]);
+      await aave.write.setReserve([t2.address, rayFromPct(1), a2.address]);
+      await provider.write.setBenchmarkTokens([[t1.address, t2.address]]);
+      expect(await provider.read.benchmarkTokensLength()).to.equal(2n);
+    });
   });
 });

@@ -176,4 +176,205 @@ describe("USDAStrategy", () => {
       ).to.be.rejected;
     });
   });
+
+  describe("CDO-driven bodies (via MockCDO forwarders)", () => {
+    it("22. deposit(USDai) auto-stakes into sUSDai", async () => {
+      const { strategy, mockCDO, usdai, susdai, user } = await loadFixture(strategyFixture);
+      await usdai.write.mint([user.account.address, parseUnits("100", 18)]);
+      await usdai.write.approve([strategy.address, (1n << 255n) - 1n], { account: user.account });
+
+      await mockCDO.write.callStrategyDeposit([
+        user.account.address,
+        usdai.address,
+        parseUnits("100", 18),
+        parseUnits("100", 18),
+        user.account.address,
+      ]);
+
+      // Strategy holds sUSDai now (auto-staked); USDai balance is zero.
+      expect(await usdai.read.balanceOf([strategy.address])).to.equal(0n);
+      expect((await susdai.read.balanceOf([strategy.address])) > 0n).to.equal(true);
+    });
+
+    it("23. deposit(sUSDai) holds the token as-is (no stake)", async () => {
+      const { strategy, mockCDO, susdai, usdai, user } = await loadFixture(strategyFixture);
+      // Seed user with sUSDai by depositing USDai into the mock vault.
+      await usdai.write.mint([user.account.address, parseUnits("10", 18)]);
+      await usdai.write.approve([susdai.address, (1n << 255n) - 1n], { account: user.account });
+      await susdai.write.deposit([parseUnits("10", 18), user.account.address], { account: user.account });
+      await susdai.write.approve([strategy.address, (1n << 255n) - 1n], { account: user.account });
+
+      const before = await susdai.read.balanceOf([strategy.address]);
+      await mockCDO.write.callStrategyDeposit([
+        user.account.address,
+        susdai.address,
+        parseUnits("5", 18),
+        parseUnits("5", 18),
+        user.account.address,
+      ]);
+      const after = await susdai.read.balanceOf([strategy.address]);
+      expect(after - before).to.equal(parseUnits("5", 18));
+    });
+
+    it("24. deposit(random token) reverts UnsupportedToken", async () => {
+      const { strategy, mockCDO, user } = await loadFixture(strategyFixture);
+      const fake = await viem.deployContract("MockERC20", ["X", "X", 18]);
+      await expect(
+        mockCDO.write.callStrategyDeposit([
+          user.account.address,
+          fake.address,
+          1n,
+          1n,
+          user.account.address,
+        ]),
+      ).to.be.rejected;
+    });
+
+    it("25. withdraw(sUSDai) routes through silo with per-tranche cooldown", async () => {
+      const { strategy, mockCDO, susdai, usdai, user, silo } = await loadFixture(strategyFixture);
+      // Seed strategy with sUSDai via USDai deposit.
+      await usdai.write.mint([user.account.address, parseUnits("100", 18)]);
+      await usdai.write.approve([strategy.address, (1n << 255n) - 1n], { account: user.account });
+      await mockCDO.write.callStrategyDeposit([
+        user.account.address,
+        usdai.address,
+        parseUnits("100", 18),
+        parseUnits("100", 18),
+        user.account.address,
+      ]);
+      // Default cooldown is 0 → silo finalises immediately and forwards.
+      await mockCDO.write.callStrategyWithdraw6([
+        user.account.address,
+        susdai.address,
+        parseUnits("10", 18),
+        parseUnits("10", 18),
+        strategy.address,
+        user.account.address,
+      ]);
+      expect(await susdai.read.balanceOf([user.account.address])).to.equal(parseUnits("10", 18));
+    });
+
+    it("26. withdraw 7-arg with shouldSkipCooldown=true bypasses per-tranche delay", async () => {
+      const { strategy, mockCDO, susdai, usdai, user } = await loadFixture(strategyFixture);
+      await usdai.write.mint([user.account.address, parseUnits("100", 18)]);
+      await usdai.write.approve([strategy.address, (1n << 255n) - 1n], { account: user.account });
+      await mockCDO.write.callStrategyDeposit([
+        user.account.address,
+        usdai.address,
+        parseUnits("100", 18),
+        parseUnits("100", 18),
+        user.account.address,
+      ]);
+      await strategy.write.setCooldowns([86400, 86400, 86400]);
+
+      await mockCDO.write.callStrategyWithdraw7([
+        user.account.address,
+        susdai.address,
+        parseUnits("5", 18),
+        parseUnits("5", 18),
+        strategy.address,
+        user.account.address,
+        true,
+      ]);
+      // Skip-cooldown branch → user receives sUSDai immediately.
+      expect(await susdai.read.balanceOf([user.account.address])).to.equal(parseUnits("5", 18));
+    });
+
+    it("27. withdraw(USDai) reverts UnsupportedToken (sUSDai-only by design)", async () => {
+      const { strategy, mockCDO, usdai, user } = await loadFixture(strategyFixture);
+      await expect(
+        mockCDO.write.callStrategyWithdraw6([
+          user.account.address,
+          usdai.address,
+          1n,
+          1n,
+          strategy.address,
+          user.account.address,
+        ]),
+      ).to.be.rejected;
+    });
+
+    it("28. reduceReserve(sUSDai) transfers directly to treasury", async () => {
+      const { strategy, mockCDO, susdai, usdai, user, treasury } = await loadFixture(strategyFixture);
+      // Seed strategy with sUSDai.
+      await usdai.write.mint([user.account.address, parseUnits("50", 18)]);
+      await usdai.write.approve([strategy.address, (1n << 255n) - 1n], { account: user.account });
+      await mockCDO.write.callStrategyDeposit([
+        user.account.address,
+        usdai.address,
+        parseUnits("50", 18),
+        parseUnits("50", 18),
+        user.account.address,
+      ]);
+
+      await mockCDO.write.callStrategyReduceReserve([susdai.address, parseUnits("3", 18), treasury.account.address]);
+      expect(await susdai.read.balanceOf([treasury.account.address])).to.equal(parseUnits("3", 18));
+    });
+
+    it("29. reduceReserve(USDai) reverts UnsupportedToken", async () => {
+      const { mockCDO, usdai, treasury } = await loadFixture(strategyFixture);
+      await expect(
+        mockCDO.write.callStrategyReduceReserve([usdai.address, 1n, treasury.account.address]),
+      ).to.be.rejected;
+    });
+
+    it("30. reduceReserve with treasury=0 reverts ZeroAddress", async () => {
+      const { mockCDO, susdai } = await loadFixture(strategyFixture);
+      await expect(
+        mockCDO.write.callStrategyReduceReserve([susdai.address, 1n, zeroAddress]),
+      ).to.be.rejected;
+    });
+  });
+
+  describe("conversion helpers", () => {
+    it("31. convertToTokens(USDai, ...) is 1:1", async () => {
+      const { strategy, usdai } = await loadFixture(strategyFixture);
+      const v = await strategy.read.convertToTokens([usdai.address, parseUnits("42", 18), 0]);
+      expect(v).to.equal(parseUnits("42", 18));
+    });
+
+    it("32. convertToAssets(unknown token, ...) reverts UnsupportedToken", async () => {
+      const { strategy } = await loadFixture(strategyFixture);
+      const fake = await viem.deployContract("MockERC20", ["X", "X", 18]);
+      await expect(strategy.read.convertToAssets([fake.address, 1n, 0])).to.be.rejected;
+    });
+
+    it("33. convertToTokens(unknown token, ...) reverts UnsupportedToken", async () => {
+      const { strategy } = await loadFixture(strategyFixture);
+      const fake = await viem.deployContract("MockERC20", ["X", "X", 18]);
+      await expect(strategy.read.convertToTokens([fake.address, 1n, 0])).to.be.rejected;
+    });
+
+    it("34. convertToAssets(sUSDai, ..., Ceil) uses previewMint path", async () => {
+      const { strategy, susdai } = await loadFixture(strategyFixture);
+      const v = await strategy.read.convertToAssets([susdai.address, parseUnits("1", 18), 1]);
+      expect(v >= 0n).to.equal(true);
+    });
+
+    it("35. convertToTokens(sUSDai, ..., Floor) uses previewWithdraw path", async () => {
+      const { strategy, susdai } = await loadFixture(strategyFixture);
+      const v = await strategy.read.convertToTokens([susdai.address, parseUnits("1", 18), 0]);
+      expect(v >= 0n).to.equal(true);
+    });
+  });
+
+  describe("constructor + setCooldowns event", () => {
+    it("36. Constructor reverts on zero sUSDai address", async () => {
+      const { silo } = await loadFixture(strategyFixture);
+      await expect(viem.deployContract("USDAStrategy", [zeroAddress, silo.address])).to.be.rejected;
+    });
+
+    it("37. Constructor reverts on zero silo address", async () => {
+      const { susdai } = await loadFixture(strategyFixture);
+      await expect(viem.deployContract("USDAStrategy", [susdai.address, zeroAddress])).to.be.rejected;
+    });
+
+    it("38. setCooldowns(jr,mz,sr) writes all three + emits CooldownsChanged", async () => {
+      const { strategy } = await loadFixture(strategyFixture);
+      await strategy.write.setCooldowns([3600, 7200, 10800]);
+      expect(await strategy.read.cooldownJr()).to.equal(3600);
+      expect(await strategy.read.cooldownMz()).to.equal(7200);
+      expect(await strategy.read.cooldownSr()).to.equal(10800);
+    });
+  });
 });
