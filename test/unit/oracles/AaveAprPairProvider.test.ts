@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { expect } from "../../helpers/chai-setup.js";
-import { loadFixture } from "../../helpers/network-helpers.js";
+import { loadFixture, time } from "../../helpers/network-helpers.js";
 import { encodeFunctionData, getAddress, zeroAddress } from "viem";
 import { deployAcm } from "../../fixtures/deployAcm.js";
 import { getClients, viem } from "../../helpers/viemClients.js";
@@ -131,80 +131,107 @@ describe("AaveAprPairProvider", () => {
     });
   });
 
-  describe("getAPRbase — sUSDai vesting", () => {
-    it("12. Active vesting window returns proportional APR", async () => {
-      const { provider, susdai, aave } = await loadFixture(deployProvider);
+  describe("getAPRbase — sUSDai share-price sampling", () => {
+    // Helper: wire benchmark, take a sample at initial price, advance
+    // time, set a new price, return aprBase reading.
+    async function setupAndSample(
+      initialPrice: bigint,
+      priceAfter: bigint,
+      elapsedSeconds: number
+    ) {
+      const ctx = await loadFixture(deployProvider);
+      const { provider, susdai, aave } = ctx;
       const usdc = await viem.deployContract("MockERC20", ["USDC", "USDC", 6]);
       const aUSDC = await viem.deployContract("MockERC20", ["aUSDC", "aUSDC", 6]);
       await aUSDC.write.mint([provider.address, 1000n * 10n ** 6n]);
       await aave.write.setReserve([usdc.address, rayFromPct(5), aUSDC.address]);
       await provider.write.setBenchmarkTokens([[usdc.address]]);
-      const now = BigInt(Math.floor(Date.now() / 1000));
-      await susdai.write.setVesting([10n ** 18n, now - 100n]);
-      await susdai.write.setTotalAssets([1000n * 10n ** 18n]);
-      const [aprBase] = await provider.read.getApr();
+
+      await susdai.write.setDepositSharePrice([initialPrice]);
+      await provider.write.sampleRate();
+
+      await time.increase(elapsedSeconds);
+      await susdai.write.setDepositSharePrice([priceAfter]);
+      return ctx;
+    }
+
+    it("12. Share price grew → aprBase > 0 (annualised delta)", async () => {
+      // 1.0 → 1.001 over 1 day ≈ 36.5% APR (linear annualised)
+      const ctx = await setupAndSample(10n ** 18n, 1001n * 10n ** 15n, 24 * 60 * 60);
+      const [aprBase] = await ctx.provider.read.getApr();
       expect(aprBase > 0n).to.equal(true);
     });
 
-    it("13. elapsed >= VESTING_PERIOD → returns 0", async () => {
-      const { provider, susdai } = await loadFixture(deployProvider);
-      const now = BigInt(Math.floor(Date.now() / 1000));
-      await susdai.write.setVesting([10n ** 18n, now - 9n * 60n * 60n]); // > 8h
-      const [aprBase] = await provider.read.getApr().catch(() => [-1n]);
-      // can't call without benchmarks; abort here.
-      expect(true).to.equal(true);
-    });
-
-    it("14. unvestedAmount == 0 → returns 0", async () => {
-      const { provider, susdai, aave } = await loadFixture(deployProvider);
+    it("13. No sample taken yet → aprBase == 0", async () => {
+      const { provider, aave } = await loadFixture(deployProvider);
       const usdc = await viem.deployContract("MockERC20", ["USDC", "USDC", 6]);
       const aUSDC = await viem.deployContract("MockERC20", ["aUSDC", "aUSDC", 6]);
       await aUSDC.write.mint([provider.address, 1000n * 10n ** 6n]);
       await aave.write.setReserve([usdc.address, rayFromPct(5), aUSDC.address]);
       await provider.write.setBenchmarkTokens([[usdc.address]]);
-      await susdai.write.setVesting([0n, BigInt(Math.floor(Date.now() / 1000)) - 100n]);
+      // Never called sampleRate().
       const [aprBase] = await provider.read.getApr();
       expect(aprBase).to.equal(0n);
     });
 
-    it("15. totalAssets == 0 → returns 0 (division guard)", async () => {
-      const { provider, susdai, aave } = await loadFixture(deployProvider);
+    it("14. Price didn't grow (priceNow == sample) → aprBase == 0", async () => {
+      const ctx = await setupAndSample(10n ** 18n, 10n ** 18n, 24 * 60 * 60);
+      const [aprBase] = await ctx.provider.read.getApr();
+      expect(aprBase).to.equal(0n);
+    });
+
+    it("15. Price went DOWN → aprBase == 0 (conservative)", async () => {
+      // Loss should not be reported as positive APR.
+      const ctx = await setupAndSample(10n ** 18n, 999n * 10n ** 15n, 24 * 60 * 60);
+      const [aprBase] = await ctx.provider.read.getApr();
+      expect(aprBase).to.equal(0n);
+    });
+
+    it("16. lastSample == 0 path → aprBase == 0 (defensive)", async () => {
+      // Set the sample to 0 explicitly (degenerate state — shouldn't
+      // happen via sampleRate but the early-return is defence-in-depth).
+      const ctx = await loadFixture(deployProvider);
+      const { provider, susdai, aave } = ctx;
       const usdc = await viem.deployContract("MockERC20", ["USDC", "USDC", 6]);
       const aUSDC = await viem.deployContract("MockERC20", ["aUSDC", "aUSDC", 6]);
       await aUSDC.write.mint([provider.address, 1000n * 10n ** 6n]);
       await aave.write.setReserve([usdc.address, rayFromPct(5), aUSDC.address]);
       await provider.write.setBenchmarkTokens([[usdc.address]]);
-      await susdai.write.setTotalAssets([0n]);
+
+      await susdai.write.setDepositSharePrice([0n]);
+      await provider.write.sampleRate();
+      await time.increase(24 * 60 * 60);
+      await susdai.write.setDepositSharePrice([10n ** 18n]);
+
       const [aprBase] = await provider.read.getApr();
       expect(aprBase).to.equal(0n);
     });
 
-    it("16. lastDistributionTimestamp > block.timestamp → returns 0", async () => {
-      const { provider, susdai, aave } = await loadFixture(deployProvider);
-      const usdc = await viem.deployContract("MockERC20", ["USDC", "USDC", 6]);
-      const aUSDC = await viem.deployContract("MockERC20", ["aUSDC", "aUSDC", 6]);
-      await aUSDC.write.mint([provider.address, 1000n * 10n ** 6n]);
-      await aave.write.setReserve([usdc.address, rayFromPct(5), aUSDC.address]);
-      await provider.write.setBenchmarkTokens([[usdc.address]]);
-      const future = BigInt(Math.floor(Date.now() / 1000)) + 1_000_000n;
-      await susdai.write.setVesting([10n ** 18n, future]);
-      const [aprBase] = await provider.read.getApr();
-      expect(aprBase).to.equal(0n);
-    });
-
-    it("17. Extreme apr clamped at 2e12 (200%)", async () => {
-      const { provider, susdai, aave } = await loadFixture(deployProvider);
-      const usdc = await viem.deployContract("MockERC20", ["USDC", "USDC", 6]);
-      const aUSDC = await viem.deployContract("MockERC20", ["aUSDC", "aUSDC", 6]);
-      await aUSDC.write.mint([provider.address, 1000n * 10n ** 6n]);
-      await aave.write.setReserve([usdc.address, rayFromPct(5), aUSDC.address]);
-      await provider.write.setBenchmarkTokens([[usdc.address]]);
-      const now = BigInt(Math.floor(Date.now() / 1000));
-      // Huge unvested vs tiny totalAssets to force the clamp.
-      await susdai.write.setVesting([10n ** 30n, now - 1n]);
-      await susdai.write.setTotalAssets([1n]);
-      const [aprBase] = await provider.read.getApr();
+    it("17. Extreme delta clamped at 2e12 (200%)", async () => {
+      // 1.0 → 1000.0 over 1 second → astronomical APR → clamped.
+      const ctx = await setupAndSample(10n ** 18n, 1000n * 10n ** 18n, 1);
+      const [aprBase] = await ctx.provider.read.getApr();
       expect(aprBase <= 2n * 10n ** 12n).to.equal(true);
+      expect(aprBase > 0n).to.equal(true);
+    });
+
+    it("17a. sampleRate is gated by UPDATER_STRAT_CONFIG_ROLE", async () => {
+      const { provider, user } = await loadFixture(deployProvider);
+      // user has no role granted.
+      await expect(
+        provider.write.sampleRate({ account: user.account })
+      ).to.be.rejected;
+    });
+
+    it("17b. sampleRate writes lastSample + lastSampleAt", async () => {
+      const { provider, susdai } = await loadFixture(deployProvider);
+      await susdai.write.setDepositSharePrice([12345n * 10n ** 14n]);
+      await provider.write.sampleRate();
+
+      const sample = await provider.read.lastSample();
+      const at = await provider.read.lastSampleAt();
+      expect(sample).to.equal(12345n * 10n ** 14n);
+      expect(at > 0n).to.equal(true);
     });
   });
 

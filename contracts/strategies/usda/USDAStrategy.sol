@@ -196,50 +196,49 @@ contract USDAStrategy is Strategy, IUSDAStrategy {
 
     /**
      * @inheritdoc IStrategy
-     * @dev Returns USDai-equivalent value of all sUSDai held. Floor-
-     *      rounded via `previewRedeem`. Idle USDai (if any) is added on
-     *      top in case a partial mid-transaction state ever holds it.
+     * @dev Returns USDai-equivalent value of all sUSDai held, valued at
+     *      sUSDai's conservative NAV via {IsUSDai.convertToAssets}.
+     *      ERC-7540 disables preview methods on sUSDai. Idle USDai (if
+     *      any) is added on top in case a partial mid-transaction state
+     *      ever holds it.
      */
     function totalAssets() external view override returns (uint256) {
         uint256 sUSDaiBalance = IERC20(address(sUSDai)).balanceOf(address(this));
-        uint256 staked = sUSDaiBalance == 0 ? 0 : sUSDai.previewRedeem(sUSDaiBalance);
+        uint256 staked = sUSDaiBalance == 0 ? 0 : sUSDai.convertToAssets(sUSDaiBalance);
         uint256 idle = USDai.balanceOf(address(this));
         return staked + idle;
     }
 
     /**
      * @inheritdoc IStrategy
-     * @dev USDai is 1:1 with the base asset. sUSDai uses the vault's
-     *      exchange rate with the requested rounding direction.
+     * @dev USDai is 1:1 with the base asset. For sUSDai, uses the
+     *      non-binding hint from {IsUSDai.convertToAssets}. ERC-7540
+     *      does not expose rounding control — the `rounding` argument is
+     *      accepted for ABI compatibility but ignored.
      */
     function convertToAssets(
         address token,
         uint256 tokenAmount,
-        Math.Rounding rounding
+        Math.Rounding /* rounding */
     ) external view override returns (uint256) {
         if (token == address(USDai)) return tokenAmount;
-        if (token == address(sUSDai)) {
-            return
-                rounding == Math.Rounding.Floor ? sUSDai.previewRedeem(tokenAmount) : sUSDai.previewMint(tokenAmount);
-        }
+        if (token == address(sUSDai)) return sUSDai.convertToAssets(tokenAmount);
         revert UnsupportedToken(token);
     }
 
     /**
      * @inheritdoc IStrategy
+     * @dev Mirror of {convertToAssets}: rounding ignored for sUSDai
+     *      because ERC-7540's {IsUSDai.convertToShares} does not accept
+     *      a rounding direction.
      */
     function convertToTokens(
         address token,
         uint256 baseAssets,
-        Math.Rounding rounding
+        Math.Rounding /* rounding */
     ) external view override returns (uint256) {
         if (token == address(USDai)) return baseAssets;
-        if (token == address(sUSDai)) {
-            return
-                rounding == Math.Rounding.Floor
-                    ? sUSDai.previewWithdraw(baseAssets)
-                    : sUSDai.previewDeposit(baseAssets);
-        }
+        if (token == address(sUSDai)) return sUSDai.convertToShares(baseAssets);
         revert UnsupportedToken(token);
     }
 

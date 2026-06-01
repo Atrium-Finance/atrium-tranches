@@ -133,7 +133,7 @@ describe("USDAStrategy", () => {
   });
 
   describe("views", () => {
-    it("16. totalAssets returns sUSDai.previewRedeem(balance) (0 at start)", async () => {
+    it("16. totalAssets returns sUSDai.convertToAssets(balance) (0 at start)", async () => {
       const { strategy } = await loadFixture(strategyFixture);
       expect(await strategy.read.totalAssets()).to.equal(0n);
     });

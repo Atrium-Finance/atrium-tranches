@@ -14,8 +14,9 @@ import { IAavePool } from "../../interfaces/external/IAavePool.sol";
  *         as the PULL fallback.
  *         - `aprTarget` is the supply-weighted average of Aave V3 supply
  *           APRs across a curated benchmark basket (e.g. USDC, USDT).
- *         - `aprBase` is derived from sUSDai's active vesting window:
- *           unvested yield annualised over the remaining vesting time.
+ *         - `aprBase` is derived from sUSDai's `depositSharePrice`
+ *           growth between keeper-driven samples — `(priceNow - sample)
+ *           / sample` annualised over the elapsed window.
  * @dev    APR encoding: int64, 12 decimals.
  *         Strategy delegates ALL APR logic here — this is a pure
  *         provider, independent of the Strategy's own state.
@@ -26,10 +27,6 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
     // ---------------------------------------------------------------
 
     uint256 public constant SECONDS_PER_YEAR = 365 days;
-
-    /// @notice USD.AI sUSDai vesting window length. Matches the vault's
-    ///         hardcoded distribution cadence.
-    uint256 public constant VESTING_PERIOD = 8 hours;
 
     /// @notice Sr floor APR ceiling: 40% in 12-decimal SD7x12.
     int64 public constant APR_TARGET_MAX = 0.4e12;
@@ -57,13 +54,24 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
 
     IERC20[] private _benchmarkTokens;
 
-    uint256[49] private __gap;
+    /// @notice Last sUSDai `depositSharePrice` snapshot taken by a
+    ///         keeper. `0` means "no sample yet" — aprBase returns 0
+    ///         until the first `sampleRate()` call.
+    uint256 public lastSample;
+
+    /// @notice Timestamp of the last `sampleRate()` call. Paired with
+    ///         {lastSample} to compute an annualised delta in
+    ///         {_computeAprBase}.
+    uint64 public lastSampleAt;
+
+    uint256[47] private __gap;
 
     // ---------------------------------------------------------------
     // Events
     // ---------------------------------------------------------------
 
     event BenchmarkTokensSet(IERC20[] tokens);
+    event SampleRecorded(uint256 sample, uint64 atTimestamp);
 
     // ---------------------------------------------------------------
     // Errors
@@ -99,7 +107,7 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
      * @inheritdoc IStrategyAprProvider
      * @dev `aprTarget` is always evaluated — the Sr floor is policy, not
      *      market data, so it is returned unconditionally (even when
-     *      `aprBase = 0` from insufficient vesting data).
+     *      `aprBase = 0` because no sample has been taken yet).
      */
     function getApr() external view override returns (int64 aprBase, int64 aprTarget, uint64 updatedAt) {
         aprTarget = _computeAprTarget();
@@ -199,37 +207,54 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
     }
 
     // ---------------------------------------------------------------
-    // Internal — APR base (sUSDai vesting)
+    // Sampling — keeper-driven sUSDai share-price snapshots
     // ---------------------------------------------------------------
 
     /**
-     * @dev apr18 = unvested × SECONDS_PER_YEAR × 1e18
-     *              / (VESTING_PERIOD - elapsed)
-     *              / totalAssets
-     *      apr12 = apr18 / 1e6
+     * @notice Snapshot sUSDai's current `depositSharePrice` for use in
+     *         the next aprBase calculation. Keeper-only.
+     * @dev    Called periodically (daily / hourly, off-chain decision).
+     *         The cadence determines how much smoothing the resulting
+     *         annualised APR sees: faster cadence reacts to short-term
+     *         price moves, slower cadence damps noise.
+     */
+    function sampleRate() external onlyRole(UPDATER_STRAT_CONFIG_ROLE) {
+        uint256 price = sUSDai.depositSharePrice();
+        uint64 nowTs = uint64(block.timestamp);
+        lastSample = price;
+        lastSampleAt = nowTs;
+        emit SampleRecorded(price, nowTs);
+    }
+
+    // ---------------------------------------------------------------
+    // Internal — APR base (sUSDai share-price sampling)
+    // ---------------------------------------------------------------
+
+    /**
+     * @dev  apr18 = (priceNow - priceSample) × SECONDS_PER_YEAR × 1e18
+     *               / priceSample / dt
+     *       apr12 = apr18 / 1e6
      *
-     *      Returns 0 (with aprTarget still emitted) when:
-     *      - block.timestamp <= lastDistributionTimestamp (clock drift)
-     *      - elapsed >= VESTING_PERIOD (fully vested)
-     *      - unvested == 0
-     *      - totalAssets == 0
+     *       Returns 0 when:
+     *       - no sample taken yet (`lastSampleAt == 0`)
+     *       - current price ≤ sampled price (no growth)
+     *       - dt == 0 (sample taken this same block)
+     *
+     *       The annualised delta is clamped at {APR_BASE_CLAMP_18}
+     *       (200%) to keep the int64 cast safe and to filter out
+     *       pathological one-block spikes.
      */
     function _computeAprBase() internal view returns (int64) {
-        uint256 lastTs = sUSDai.lastDistributionTimestamp();
-        if (block.timestamp <= lastTs) return 0;
+        if (lastSampleAt == 0 || lastSample == 0) return 0;
 
-        uint256 elapsed = block.timestamp - lastTs;
-        if (elapsed >= VESTING_PERIOD) return 0;
+        uint256 priceNow = sUSDai.depositSharePrice();
+        if (priceNow <= lastSample) return 0;
 
-        uint256 unvested = sUSDai.unvestedAmount();
-        if (unvested == 0) return 0;
+        uint256 dt = block.timestamp - uint256(lastSampleAt);
+        if (dt == 0) return 0;
 
-        uint256 totalAssets_ = sUSDai.totalAssets();
-        if (totalAssets_ == 0) return 0;
-
-        uint256 remaining = VESTING_PERIOD - elapsed;
-
-        uint256 apr18 = (unvested * SECONDS_PER_YEAR * 1e18) / remaining / totalAssets_;
+        uint256 delta = priceNow - lastSample;
+        uint256 apr18 = (delta * SECONDS_PER_YEAR * 1e18) / lastSample / dt;
 
         if (apr18 > APR_BASE_CLAMP_18) apr18 = APR_BASE_CLAMP_18;
 
