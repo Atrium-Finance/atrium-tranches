@@ -6,6 +6,9 @@
   "scripts": {
     "build": "hardhat compile",
     "test": "hardhat test",
+    "test:unit": "hardhat test test/unit/**/*.test.ts",
+    "test:integration": "hardhat test test/integration/**/*.test.ts",
+    "test:all": "pnpm test:unit && pnpm test:integration",
     "test:coverage": "hardhat test --coverage",
     "test:coverage:check": "hardhat test --coverage && node scripts/check-coverage-thresholds.js",
     "test:coverage:critical": "hardhat test --coverage && node scripts/check-critical-paths.js",
