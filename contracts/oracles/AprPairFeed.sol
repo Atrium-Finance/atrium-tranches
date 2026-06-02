@@ -7,30 +7,26 @@ import { IStrategyAprProvider } from "../interfaces/oracles/IStrategyAprProvider
 
 /**
  * @title  AprPairFeed
- * @notice Base-APR oracle for Atrium Senior pricing. PUSH + PULL.
- * @dev    Prefers fresh PUSH data; falls back to PULL when stale.
- *         Reports only `aprBase` — `aprTarget` is Accounting policy.
+ * @notice `(aprBase, aprTarget)` oracle for Atrium Senior pricing.
+ *         Prefers fresh PUSH rounds; falls back to PULL from the
+ *         wired {IStrategyAprProvider} when stale.
  */
 contract AprPairFeed is IAprPairFeed, AccessControlled {
-    // ---------------------------------------------------------------
-    // Constants
-    // ---------------------------------------------------------------
-
-    /** @dev Upper bound on a valid APR observation: +200%. */
+    /**
+     * @dev SD7x12 valid range — `[-50%, +200%]`. Matches the
+     *      Accounting feed normaliser bounds.
+     */
     int64 private constant APR_MAX = 2e12;
-    /** @dev Lower bound on a valid APR observation: -50%. */
     int64 private constant APR_MIN = -0.5e12;
-    /** @dev Clock-skew tolerance for future-dated PUSH timestamps. */
+
+    // @dev Clock-skew tolerance for future-dated PUSH timestamps.
     uint64 private constant MAX_FUTURE_DRIFT = 60;
 
-    /** @notice SD7x12 encoding — 12 decimals. */
+    // @notice SD7x12 encoding — 12 decimals.
     uint8 public constant override decimals = 12;
-    /** @notice Number of historical rounds retained in the ring buffer. */
-    uint8 public constant roundsCap = 20;
 
-    // ---------------------------------------------------------------
-    // Storage
-    // ---------------------------------------------------------------
+    // @notice Historical rounds retained in the ring buffer.
+    uint8 public constant roundsCap = 20;
 
     string public description;
     uint64 public latestRoundId;
@@ -46,18 +42,10 @@ contract AprPairFeed is IAprPairFeed, AccessControlled {
     }
     ESourcePref public sourcePref;
 
-    // ---------------------------------------------------------------
-    // Events
-    // ---------------------------------------------------------------
-
     event AnswerUpdated(int64 aprBase, int64 aprTarget, uint64 roundId, uint64 updatedAt);
     event ProviderSet(address provider);
     event StalePeriodSet(uint256 period);
     event SourcePrefChanged(ESourcePref pref);
-
-    // ---------------------------------------------------------------
-    // Errors
-    // ---------------------------------------------------------------
 
     error StaleUpdate(int64 aprBase, uint64 timestamp);
     error OutOfOrderUpdate(int64 aprBase, uint64 timestamp);
@@ -65,11 +53,7 @@ contract AprPairFeed is IAprPairFeed, AccessControlled {
     error NoDataPresent();
     error OldRound();
 
-    // ---------------------------------------------------------------
-    // Initialiser
-    // ---------------------------------------------------------------
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    // @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
@@ -87,16 +71,13 @@ contract AprPairFeed is IAprPairFeed, AccessControlled {
         description = description_;
     }
 
-    // ---------------------------------------------------------------
-    // Reads
-    // ---------------------------------------------------------------
-
+    // @inheritdoc IAprPairFeed
     function latestRoundData() external view override returns (TRound memory) {
         TRound memory round = latestRound;
 
         if (sourcePref == ESourcePref.Feed && round.updatedAt != 0) {
-            // Guard against future-dated rounds (clock skew) — would
-            // otherwise underflow. A future round is by definition fresh.
+            // Guard against future-dated rounds (clock skew): a future
+            // round is by definition fresh, dt clamps to 0.
             uint256 dt = block.timestamp > round.updatedAt ? block.timestamp - uint256(round.updatedAt) : 0;
             if (dt < roundStaleAfter) {
                 return round;
@@ -110,6 +91,7 @@ contract AprPairFeed is IAprPairFeed, AccessControlled {
         return TRound({ aprBase: aprBase, aprTarget: aprTarget, updatedAt: t1, answeredInRound: latestRoundId + 1 });
     }
 
+    // @inheritdoc IAprPairFeed
     function getRoundData(uint64 roundId) external view override returns (TRound memory) {
         uint64 idx = roundId % uint64(roundsCap);
         TRound memory round = rounds[idx];
@@ -118,10 +100,7 @@ contract AprPairFeed is IAprPairFeed, AccessControlled {
         return round;
     }
 
-    // ---------------------------------------------------------------
-    // PUSH
-    // ---------------------------------------------------------------
-
+    // @inheritdoc IAprPairFeed
     function updateRoundData(
         int64 aprBase,
         int64 aprTarget,
@@ -131,22 +110,15 @@ contract AprPairFeed is IAprPairFeed, AccessControlled {
         _setSourcePref(ESourcePref.Feed);
     }
 
-    // ---------------------------------------------------------------
-    // PULL
-    // ---------------------------------------------------------------
-
+    // @inheritdoc IAprPairFeed
     function updateRoundData() external override onlyRole(UPDATER_FEED_ROLE) {
         (int64 aprBase, int64 aprTarget, uint64 t) = provider.getApr();
         _updateRoundDataInner(aprBase, aprTarget, t);
         _setSourcePref(ESourcePref.Strategy);
     }
 
-    // ---------------------------------------------------------------
-    // Internal
-    // ---------------------------------------------------------------
-
     function _updateRoundDataInner(int64 aprBase, int64 aprTarget, uint64 t) internal {
-        // Skip the staleness check when chain time hasn't yet exceeded
+        // Skip staleness check when chain time hasn't yet exceeded
         // `roundStaleAfter` (test-chain / fresh-fork safety).
         if (block.timestamp > roundStaleAfter && uint256(t) < block.timestamp - roundStaleAfter) {
             revert StaleUpdate(aprBase, t);
@@ -178,10 +150,11 @@ contract AprPairFeed is IAprPairFeed, AccessControlled {
         if (apr < APR_MIN || apr > APR_MAX) revert InvalidApr(apr);
     }
 
-    // ---------------------------------------------------------------
-    // Admin
-    // ---------------------------------------------------------------
-
+    /**
+     * @notice Owner-only. Validates the provider via {getApr} before
+     *         registering — rejects misconfigured providers at the
+     *         registration moment, not at first read.
+     */
     function setProvider(IStrategyAprProvider provider_) external onlyOwner {
         (int64 aprBase, int64 aprTarget, ) = provider_.getApr();
         _ensureValid(aprBase);

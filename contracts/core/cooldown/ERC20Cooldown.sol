@@ -24,10 +24,7 @@ contract ERC20Cooldown is IERC20Cooldown, CooldownBase {
     mapping(address token => mapping(address account => TRequest[])) private _activeRequests;
     mapping(address token => bool) public cooldownDisabled;
 
-    // -------------------------------------------------------------
-    // Worker entrypoint
-    // -------------------------------------------------------------
-
+    // @inheritdoc IERC20Cooldown
     function transfer(
         IERC20 token,
         address initialFrom,
@@ -54,13 +51,14 @@ contract ERC20Cooldown is IERC20Cooldown, CooldownBase {
         uint64 unlockAt = uint64(block.timestamp + cooldownSeconds);
 
         if (requestsCount < MAX_ACTIVE_REQUEST_SLOTS) {
+            // Same-block request — merge with the last entry.
             if (requestsCount > 0 && requests[requestsCount - 1].unlockAt == unlockAt) {
                 requests[requestsCount - 1].amount += uint192(amount);
             } else {
                 requests.push(TRequest(unlockAt, uint192(amount)));
             }
         } else {
-            // Slot cap reached — merge into last, extend unlock.
+            // Slot cap reached — merge into last entry, extend its unlock.
             TRequest storage last = requests[requestsCount - 1];
             last.amount += uint192(amount);
             if (last.unlockAt < unlockAt) last.unlockAt = unlockAt;
@@ -70,18 +68,21 @@ contract ERC20Cooldown is IERC20Cooldown, CooldownBase {
         emit TransferRequested(token, initialFrom, to, amount, unlockAt);
     }
 
-    // -------------------------------------------------------------
-    // User-facing — permissionless finalise
-    // -------------------------------------------------------------
-
+    // @inheritdoc ICooldown
     function finalize(IERC20 token, address user) external override returns (uint256) {
         return _finalize(token, user, block.timestamp);
     }
 
+    // @inheritdoc ICooldown
     function finalize(IERC20 token, address user, uint256 at) external override returns (uint256) {
         return _finalize(token, user, at);
     }
 
+    /**
+     * @dev Swap-pop iteration; `at <= block.timestamp` enforced.
+     *      When `cooldownDisabled[token]` is true, all entries are
+     *      claimable regardless of `unlockAt`.
+     */
     function _finalize(IERC20 token, address user, uint256 at) internal returns (uint256 claimed) {
         if (at > block.timestamp) revert InvalidTime();
 
@@ -107,15 +108,10 @@ contract ERC20Cooldown is IERC20Cooldown, CooldownBase {
         emit Finalized(token, user, claimed);
     }
 
-    // -------------------------------------------------------------
-    // Admin — emergency lever
-    // -------------------------------------------------------------
-
     /**
-     * @notice Toggle cooldown enforcement for `token`. When
-     *         disabled, `finalize` releases all pending entries
-     *         regardless of `unlockAt`.
-     * @dev    Strategy calls this as part of `setCooldowns`.
+     * @inheritdoc IERC20Cooldown
+     * @dev Strategy invokes this from its `setCooldowns` when all
+     *      three tranche cooldowns drop to zero.
      */
     function setCooldownDisabled(IERC20 token, bool isCooldownDisabled)
         external override onlyRole(COOLDOWN_WORKER_ROLE)
@@ -123,16 +119,14 @@ contract ERC20Cooldown is IERC20Cooldown, CooldownBase {
         cooldownDisabled[address(token)] = isCooldownDisabled;
     }
 
-    // -------------------------------------------------------------
-    // Views
-    // -------------------------------------------------------------
-
+    // @inheritdoc ICooldown
     function balanceOf(IERC20 token, address user)
         external view override returns (ICooldown.TBalanceState memory)
     {
         return _balanceOf(token, user, block.timestamp);
     }
 
+    // @inheritdoc ICooldown
     function balanceOf(IERC20 token, address user, uint256 at)
         external view override returns (ICooldown.TBalanceState memory)
     {

@@ -11,12 +11,13 @@ import { CooldownBase } from "./CooldownBase.sol";
 
 /**
  * @title  SharesCooldown
- * @notice Silo that holds tranche vault shares during the
- *         coverage-driven cooldown period.
+ * @notice Silo holding tranche vault shares during the coverage-driven
+ *         cooldown period.
  */
 contract SharesCooldown is ISharesCooldown, CooldownBase {
     uint256 private constant PERCENTAGE_100 = 1e18;
-    uint256 private constant MAX_FEE_PER_DAY = 0.01e18; // 1%/day cap
+    // @dev 1%/day cap on the early-exit fee rate.
+    uint256 private constant MAX_FEE_PER_DAY = 0.01e18;
     uint256 private constant SECONDS_PER_DAY = 1 days;
 
     mapping(address vault => mapping(address account => TRequest[])) private _activeRequests;
@@ -29,10 +30,7 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         _;
     }
 
-    // ---------------------------------------------------------------
-    // Worker entrypoint
-    // ---------------------------------------------------------------
-
+    // @inheritdoc ISharesCooldown
     function requestRedeem(
         ITranche vault,
         address token,
@@ -66,8 +64,8 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         uint64 unlockAt = uint64(block.timestamp + cooldownSeconds);
 
         if (requestsCount < MAX_ACTIVE_REQUEST_SLOTS) {
+            // Same-block request — merge with the last entry.
             if (requestsCount > 0 && requests[requestsCount - 1].unlockAt == unlockAt) {
-                // Same-block request — merge with the last entry.
                 TRequest storage last = requests[requestsCount - 1];
                 last.token = token;
                 last.shares += uint192(shares);
@@ -83,26 +81,27 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         emit RequestedCooldown(address(vault), token, initialFrom, to, shares, unlockAt);
     }
 
-    // ---------------------------------------------------------------
-    // User-facing
-    // ---------------------------------------------------------------
-
+    // @inheritdoc ICooldown
     function finalize(IERC20 vault, address user) external returns (uint256 claimed) {
         return _finalizePublic(ITranche(address(vault)), address(0), user, block.timestamp);
     }
 
+    // @inheritdoc ICooldown
     function finalize(IERC20 vault, address user, uint256 _at) external returns (uint256 claimed) {
         return _finalizePublic(ITranche(address(vault)), address(0), user, _at);
     }
 
+    // @inheritdoc ISharesCooldown
     function finalize(ITranche vault, address token, address user) external returns (uint256 claimed) {
         return _finalizePublic(vault, token, user, block.timestamp);
     }
 
+    // @inheritdoc ISharesCooldown
     function finalize(ITranche vault, address token, address user, uint256 _at) external returns (uint256 claimed) {
         return _finalizePublic(vault, token, user, _at);
     }
 
+    // @inheritdoc ISharesCooldown
     function finalizeWithTokenOverride(
         IERC20 vault,
         address token,
@@ -112,6 +111,11 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         emit Finalized(vault, user, claimed);
     }
 
+    /**
+     * @inheritdoc ISharesCooldown
+     * @dev daysLeft is ceil((unlockAt - now) / 1 day). Fee is
+     *      `feePerDay × daysLeft`, capped by MAX_FEE_PER_DAY × daysLeft.
+     */
     function finalizeWithFee(
         ITranche vault,
         address token,
@@ -129,7 +133,6 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
             revert UnexpectedShares(req.shares, guard.shares);
         }
 
-        // Swap-pop the entry.
         if (i < len - 1) requests[i] = requests[len - 1];
         requests.pop();
 
@@ -150,6 +153,7 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         return sharesUser;
     }
 
+    // @inheritdoc ISharesCooldown
     function cancel(IERC20 vault, address user, uint256 i, TCancelGuard calldata guard) external onlyUser(user) {
         TRequest[] storage requests = _activeRequests[address(vault)][user];
         uint256 len = requests.length;
@@ -168,26 +172,21 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         emit RequestCanceled(address(vault), user, req.shares);
     }
 
-    // ---------------------------------------------------------------
-    // Admin
-    // ---------------------------------------------------------------
-
+    // @inheritdoc ISharesCooldown
     function setVaultExitBounds(address vault, TExitUpperBounds calldata bounds) external onlyOwner {
         if (bounds.p0 > bounds.p1) revert InvalidBounds(bounds.p0, bounds.p1);
         _vaultExitBounds[vault] = bounds;
         emit VaultCooldownBoundsUpdated(vault, bounds);
     }
 
+    // @inheritdoc ISharesCooldown
     function setVaultEarlyExitFee(address vault, uint256 fee) external onlyOwner {
         if (fee > MAX_FEE_PER_DAY) revert InvalidFee(fee);
         vaultEarlyExitFeePerDay[vault] = fee;
         emit VaultEarlyExitFeeSet(vault, fee);
     }
 
-    // ---------------------------------------------------------------
-    // Views
-    // ---------------------------------------------------------------
-
+    // @inheritdoc ISharesCooldown
     function calculateExitParams(address vault, uint256 coverage_) public view returns (TExitParams memory) {
         TExitUpperBounds memory bounds = _vaultExitBounds[vault];
         if (coverage_ <= bounds.p0) return bounds.r0;
@@ -207,17 +206,15 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         return _activeRequests[vault][account].length;
     }
 
+    // @inheritdoc ICooldown
     function balanceOf(IERC20 vault, address user) external view returns (ICooldown.TBalanceState memory) {
         return _balanceOf(vault, user, block.timestamp);
     }
 
+    // @inheritdoc ICooldown
     function balanceOf(IERC20 vault, address user, uint256 _at) external view returns (ICooldown.TBalanceState memory) {
         return _balanceOf(vault, user, _at);
     }
-
-    // ---------------------------------------------------------------
-    // Internal — finalisation
-    // ---------------------------------------------------------------
 
     function _finalizePublic(
         ITranche vault,
@@ -259,6 +256,10 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         }
     }
 
+    /**
+     * @dev Either `token` filters per-request, or `overrideToken`
+     *      forces a redemption asset for every matched request.
+     */
     function _processFinalization(
         address vault,
         address user,
@@ -267,8 +268,6 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         uint256 _at
     ) internal returns (uint256 claimed, address nextToken) {
         if (_at > block.timestamp) revert InvalidTime();
-        // either `token` filters per-request, or `overrideToken` is
-        // the redemption asset for matched requests
         if (token == address(0) && overrideToken == address(0)) revert UnsupportedToken(address(0));
 
         TRequest[] storage requests = _activeRequests[vault][user];
@@ -278,7 +277,6 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         for (uint256 i; i < len; ) {
             TRequest memory req = requests[i];
             if (isCooldownActive && req.unlockAt > _at) {
-                // still pending
                 unchecked {
                     i++;
                 }
@@ -294,7 +292,6 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
 
             claimed += req.shares;
 
-            // Swap-pop.
             if (i < len - 1) requests[i] = requests[len - 1];
             requests.pop();
             unchecked {
@@ -347,10 +344,12 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
             });
     }
 
-    // ---------------------------------------------------------------
-    // Internal — fee / helpers
-    // ---------------------------------------------------------------
-
+    /**
+     * @dev sharesFee = floor(shares × feeBps / 1e18); sharesUser is
+     *      the remainder. Either side being zero reverts `EmptyFee`
+     *      so callers don't burn a 1-wei fee that yields zero user
+     *      shares (or vice versa).
+     */
     function _accrueFee(
         ITranche vault,
         uint256 shares,
@@ -362,6 +361,10 @@ contract SharesCooldown is ISharesCooldown, CooldownBase {
         vault.burnSharesAsFee(sharesFee, address(this));
     }
 
+    /**
+     * @dev Canonical "cooldown disabled" sentinel: both `p1 == 0` and
+     *      `r2.sharesLock == 0`.
+     */
     function _isCooldownActive(address vault) internal view returns (bool) {
         TExitUpperBounds memory bounds = _vaultExitBounds[vault];
         return bounds.p1 > 0 || bounds.r2.sharesLock > 0;

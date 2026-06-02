@@ -6,23 +6,21 @@ import { ICooldown } from "../../interfaces/cooldown/ICooldown.sol";
 
 /**
  * @title  CooldownBase
- * @notice Shared base for silo contracts that hold assets during a
- *         cooldown period. Centralises the slot-cap constants and
- *         the standard `initialize(owner, acm)` hook.
+ * @notice Shared base for silo contracts. Defines slot-cap constants
+ *         and the standard `initialize(owner, acm)` hook.
  */
 abstract contract CooldownBase is ICooldown, AccessControlled {
     /**
      * @dev Maximum active requests per `(vault, account)`. Requests
-     *      beyond this count are merged into the last entry to
-     *      bound `finalize` and `balanceOf` gas costs.
+     *      beyond this count merge into the last entry to keep
+     *      `finalize` and `balanceOf` gas costs bounded.
      */
     uint256 internal constant MAX_ACTIVE_REQUEST_SLOTS = 70;
 
     /**
-     * @dev Maximum active requests when `initialFrom != to`
-     *      (request created on behalf of another address). Reached
-     *      via revert, not merge — anti-spam protection for the
-     *      external receiver.
+     * @dev Slot cap when `initialFrom != to` (request created on
+     *      behalf of another address). Reached via revert, not
+     *      merge — anti-spam for the external receiver.
      */
     uint256 internal constant PUBLIC_REQUEST_SLOTS_CAP = 40;
 

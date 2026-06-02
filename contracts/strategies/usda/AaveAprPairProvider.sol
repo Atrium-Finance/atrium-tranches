@@ -10,83 +10,66 @@ import { IAavePool } from "../../interfaces/external/IAavePool.sol";
 
 /**
  * @title  AaveAprPairProvider
- * @notice Spot APR provider for the USDAStrategy. Wired into AprPairFeed
- *         as the PULL fallback.
- *         - `aprTarget` is the supply-weighted average of Aave V3 supply
- *           APRs across a curated benchmark basket (e.g. USDC, USDT).
- *         - `aprBase` is derived from sUSDai's `depositSharePrice`
- *           growth between keeper-driven samples — `(priceNow - sample)
- *           / sample` annualised over the elapsed window.
+ * @notice Spot APR provider wired into {AprPairFeed} as the PULL
+ *         fallback. `aprTarget` is the supply-weighted Aave V3
+ *         supply-APR across a curated benchmark basket; `aprBase` is
+ *         derived from sUSDai's `depositSharePrice` growth between
+ *         keeper-driven samples.
  * @dev    APR encoding: int64, 12 decimals.
- *         Strategy delegates ALL APR logic here — this is a pure
- *         provider, independent of the Strategy's own state.
  */
 contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
-    // ---------------------------------------------------------------
-    // Constants
-    // ---------------------------------------------------------------
-
     uint256 public constant SECONDS_PER_YEAR = 365 days;
 
-    /// @notice Sr floor APR ceiling: 40% in 12-decimal SD7x12.
+    // @notice Sr floor APR ceiling — 40% (SD7x12).
     int64 public constant APR_TARGET_MAX = 0.4e12;
 
-    /// @notice Lower bound on aprTarget. Aave supply APR is non-negative.
+    // @notice Aave supply APR is non-negative.
     int64 public constant APR_TARGET_MIN = 0;
 
-    /// @notice Clamp on aprBase before the int64 cast: 200% in 18-dec.
-    ///         Output is divided by 1e6 → fits comfortably in int64.
-    uint256 public constant APR_BASE_CLAMP_18 = 2e18;
+    /**
+     * @notice Upper clamp on aprBase before the int64 cast: +200% in
+     *         18-dec. Matches the {AprPairFeed} `_ensureValid` window.
+     */
+    int256 public constant APR_BASE_CLAMP_18 = 2e18;
 
-    /// @notice Cap on the benchmark basket size for `setBenchmarkTokens`.
+    /**
+     * @notice Lower clamp on aprBase: -50% in 18-dec. A sUSDai
+     *         write-down (loan default, NAV revision) yields a real
+     *         negative growth rate that must propagate to the feed.
+     */
+    int256 public constant APR_BASE_FLOOR_18 = -0.5e18;
+
+    // @notice Cap on the benchmark basket size.
     uint256 public constant MAX_BENCHMARK_TOKENS = 8;
-
-    // ---------------------------------------------------------------
-    // Immutables
-    // ---------------------------------------------------------------
 
     IsUSDai public immutable sUSDai;
     IAavePool public immutable aave;
 
-    // ---------------------------------------------------------------
-    // Storage
-    // ---------------------------------------------------------------
-
     IERC20[] private _benchmarkTokens;
 
-    /// @notice Last sUSDai `depositSharePrice` snapshot taken by a
-    ///         keeper. `0` means "no sample yet" — aprBase returns 0
-    ///         until the first `sampleRate()` call.
+    /**
+     * @notice Last sUSDai `depositSharePrice` snapshot. `0` means
+     *         "no sample yet" — aprBase returns 0 until first sample.
+     */
     uint256 public lastSample;
 
-    /// @notice Timestamp of the last `sampleRate()` call. Paired with
-    ///         {lastSample} to compute an annualised delta in
-    ///         {_computeAprBase}.
+    /**
+     * @notice Timestamp paired with {lastSample} to compute the
+     *         annualised growth rate in {_computeAprBase}.
+     */
     uint64 public lastSampleAt;
 
     uint256[47] private __gap;
 
-    // ---------------------------------------------------------------
-    // Events
-    // ---------------------------------------------------------------
-
     event BenchmarkTokensSet(IERC20[] tokens);
     event SampleRecorded(uint256 sample, uint64 atTimestamp);
-
-    // ---------------------------------------------------------------
-    // Errors
-    // ---------------------------------------------------------------
 
     error InvalidAprAvg(int64 value);
     error EmptyBenchmark();
     error InvalidBenchmarkToken(address token);
     error TooManyBenchmarkTokens(uint256 given);
 
-    // ---------------------------------------------------------------
-    // Initialiser
-    // ---------------------------------------------------------------
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    // @custom:oz-upgrades-unsafe-allow constructor
     constructor(IsUSDai sUSDai_, IAavePool aave_) {
         if (address(sUSDai_) == address(0) || address(aave_) == address(0)) {
             revert ZeroAddress();
@@ -97,17 +80,22 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
 
     function initialize(address owner_, address acm_) external initializer {
         AccessControlled_init(owner_, acm_);
+        // Bootstrap a baseline sample so the very first PULL doesn't
+        // return zero. Skipped (no revert) when sUSDai returns 0 at
+        // deploy time, so the keeper must explicitly call `sampleRate()`
+        // before APR readings become meaningful.
+        uint256 price = sUSDai.depositSharePrice();
+        if (price > 0) {
+            lastSample = price;
+            lastSampleAt = uint64(block.timestamp);
+            emit SampleRecorded(price, uint64(block.timestamp));
+        }
     }
-
-    // ---------------------------------------------------------------
-    // IStrategyAprProvider
-    // ---------------------------------------------------------------
 
     /**
      * @inheritdoc IStrategyAprProvider
-     * @dev `aprTarget` is always evaluated — the Sr floor is policy, not
-     *      market data, so it is returned unconditionally (even when
-     *      `aprBase = 0` because no sample has been taken yet).
+     * @dev    `aprTarget` is policy (not market data) and is always
+     *         evaluated, even when `aprBase == 0`.
      */
     function getApr() external view override returns (int64 aprBase, int64 aprTarget, uint64 updatedAt) {
         aprTarget = _computeAprTarget();
@@ -115,14 +103,9 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
         updatedAt = uint64(block.timestamp);
     }
 
-    // ---------------------------------------------------------------
-    // Admin
-    // ---------------------------------------------------------------
-
     /**
-     * @notice Replace the benchmark basket atomically.
-     * @dev    Each token must have a valid Aave V3 reserve
-     *         (`aTokenAddress != 0`). Gated by
+     * @notice Atomically replace the benchmark basket. Each token
+     *         must have a valid Aave V3 reserve. Gated by
      *         `UPDATER_STRAT_CONFIG_ROLE`.
      */
     function setBenchmarkTokens(IERC20[] calldata tokens) external onlyRole(UPDATER_STRAT_CONFIG_ROLE) {
@@ -151,10 +134,6 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
         emit BenchmarkTokensSet(tokens);
     }
 
-    // ---------------------------------------------------------------
-    // Views
-    // ---------------------------------------------------------------
-
     function benchmarkTokens() external view returns (IERC20[] memory) {
         return _benchmarkTokens;
     }
@@ -163,14 +142,11 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
         return _benchmarkTokens.length;
     }
 
-    // ---------------------------------------------------------------
-    // Internal — APR target (Aave weighted average)
-    // ---------------------------------------------------------------
-
     /**
-     * @dev aprAvg = Σ(apr_i × supply_i) / Σ(supply_i)
-     *      apr_i  = aave.getReserveData(token_i).currentLiquidityRate / 1e15  // RAY → 12-dec
-     *      supply_i = aToken.totalSupply()
+     * @dev Supply-weighted average across the benchmark basket:
+     *        apr_i    = aave.getReserveData(token_i).currentLiquidityRate / 1e15  // RAY → 12-dec
+     *        supply_i = aToken_i.totalSupply()
+     *        aprAvg   = Σ(apr_i × supply_i) / Σ(supply_i)
      */
     function _computeAprTarget() internal view returns (int64) {
         uint256 len = _benchmarkTokens.length;
@@ -197,8 +173,6 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
 
         uint256 aprAvg = weightedSum / totalWeight;
 
-        // aprAvg ≤ uint64(APR_TARGET_MAX) ensures the int64 cast below is
-        // safe. APR_TARGET_MAX = 4e11 fits well within int64 range.
         if (aprAvg > uint256(uint64(APR_TARGET_MAX))) {
             revert InvalidAprAvg(int64(int256(aprAvg)));
         }
@@ -206,17 +180,10 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
         return int64(int256(aprAvg));
     }
 
-    // ---------------------------------------------------------------
-    // Sampling — keeper-driven sUSDai share-price snapshots
-    // ---------------------------------------------------------------
-
     /**
-     * @notice Snapshot sUSDai's current `depositSharePrice` for use in
-     *         the next aprBase calculation. Keeper-only.
-     * @dev    Called periodically (daily / hourly, off-chain decision).
-     *         The cadence determines how much smoothing the resulting
-     *         annualised APR sees: faster cadence reacts to short-term
-     *         price moves, slower cadence damps noise.
+     * @notice Snapshot sUSDai's current `depositSharePrice` for the
+     *         next aprBase calculation. Keeper-driven cadence: faster
+     *         reacts to short-term moves, slower damps noise.
      */
     function sampleRate() external onlyRole(UPDATER_STRAT_CONFIG_ROLE) {
         uint256 price = sUSDai.depositSharePrice();
@@ -226,38 +193,37 @@ contract AaveAprPairProvider is IStrategyAprProvider, AccessControlled {
         emit SampleRecorded(price, nowTs);
     }
 
-    // ---------------------------------------------------------------
-    // Internal — APR base (sUSDai share-price sampling)
-    // ---------------------------------------------------------------
-
     /**
-     * @dev  apr18 = (priceNow - priceSample) × SECONDS_PER_YEAR × 1e18
-     *               / priceSample / dt
-     *       apr12 = apr18 / 1e6
+     * @dev Continuous yield model — sUSDai rebases continuously, so
+     *      the average growth rate between two snapshots annualises
+     *      linearly to the realised APR:
      *
-     *       Returns 0 when:
-     *       - no sample taken yet (`lastSampleAt == 0`)
-     *       - current price ≤ sampled price (no growth)
-     *       - dt == 0 (sample taken this same block)
+     *        apr18 = (priceNow - priceSample) × SECONDS_PER_YEAR × 1e18
+     *                / priceSample / dt              // signed
+     *        apr12 = apr18 / 1e6                     // SD7x12
      *
-     *       The annualised delta is clamped at {APR_BASE_CLAMP_18}
-     *       (200%) to keep the int64 cast safe and to filter out
-     *       pathological one-block spikes.
+     *      Signed: a price decrease (sUSDai write-down) is a real
+     *      signal — reported as negative APR. Clamped to
+     *      `[APR_BASE_FLOOR_18, APR_BASE_CLAMP_18]` = [-50%, +200%]
+     *      so the int64 cast is safe and pathological one-block
+     *      spikes don't propagate to Senior pricing.
+     *
+     *      Returns 0 when no sample exists yet or `dt == 0`.
      */
     function _computeAprBase() internal view returns (int64) {
         if (lastSampleAt == 0 || lastSample == 0) return 0;
 
-        uint256 priceNow = sUSDai.depositSharePrice();
-        if (priceNow <= lastSample) return 0;
-
         uint256 dt = block.timestamp - uint256(lastSampleAt);
         if (dt == 0) return 0;
 
-        uint256 delta = priceNow - lastSample;
-        uint256 apr18 = (delta * SECONDS_PER_YEAR * 1e18) / lastSample / dt;
+        uint256 priceNow = sUSDai.depositSharePrice();
+
+        int256 delta = int256(priceNow) - int256(lastSample);
+        int256 apr18 = (delta * int256(SECONDS_PER_YEAR) * 1e18) / int256(lastSample) / int256(dt);
 
         if (apr18 > APR_BASE_CLAMP_18) apr18 = APR_BASE_CLAMP_18;
+        if (apr18 < APR_BASE_FLOOR_18) apr18 = APR_BASE_FLOOR_18;
 
-        return int64(int256(apr18 / 1e6));
+        return int64(apr18 / 1e6);
     }
 }

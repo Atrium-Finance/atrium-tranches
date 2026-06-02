@@ -21,37 +21,49 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *         USDai through USD.AI's epoch.
  */
 interface IsUSDai is IERC20 {
-    /// @notice Underlying asset (USDai) of the vault.
+    // @notice Underlying asset (USDai) of the vault.
     function asset() external view returns (address);
 
-    /// @notice Synchronously deposit `assets` of underlying, mint shares
-    ///         to `receiver`. Deposit stays synchronous under ERC-7540 —
-    ///         only redeem is async.
+    /**
+     * @notice Synchronously deposit `assets` of underlying, mint shares
+     *         to `receiver`. Deposit stays synchronous under ERC-7540 —
+     *         only redeem is async.
+     */
     function deposit(uint256 assets, address receiver) external returns (uint256 shares);
 
-    /// @notice Convert sUSDai shares to USDai assets at the conservative
-    ///         NAV (rounding direction is implementation-defined,
-    ///         typically Floor). Non-binding — actual redemption goes
-    ///         through the async epoch.
+    /**
+     * @notice Convert sUSDai shares to USDai assets at the conservative
+     *         NAV (rounding direction is implementation-defined,
+     *         typically Floor). Non-binding — actual redemption goes
+     *         through the async epoch.
+     */
     function convertToAssets(uint256 shares) external view returns (uint256 assets);
 
-    /// @notice Convert USDai assets to sUSDai shares at the conservative
-    ///         NAV (rounding direction is implementation-defined).
+    /**
+     * @notice Convert USDai assets to sUSDai shares at the conservative
+     *         NAV (rounding direction is implementation-defined).
+     */
     function convertToShares(uint256 assets) external view returns (uint256 shares);
 
-    /// @notice Total USDai under management at conservative valuation.
-    ///         Used as a rough TVL signal.
+    /**
+     * @notice Total USDai under management at conservative valuation.
+     *         Used as a rough TVL signal.
+     */
     function totalAssets() external view returns (uint256);
 
-    /// @notice Share price applied to NEW deposits (optimistic NAV).
-    ///         Used by Atrium's APR provider as the sampling source —
-    ///         linear delta over time annualises into the base APR.
+    /**
+     * @notice Share price applied to NEW deposits (optimistic NAV).
+     *         Used by Atrium's APR provider as the sampling source —
+     *         linear delta over time annualises into the base APR.
+     */
     function depositSharePrice() external view returns (uint256);
 
-    /// @notice Share price applied when servicing redemptions
-    ///         (conservative NAV). Reported for completeness.
+    /**
+     * @notice Share price applied when servicing redemptions
+     *         (conservative NAV). Reported for completeness.
+     */
     function redemptionSharePrice() external view returns (uint256);
 
-    /// @notice Net asset value of the vault, conservative valuation.
+    // @notice Net asset value of the vault, conservative valuation.
     function nav() external view returns (uint256);
 }

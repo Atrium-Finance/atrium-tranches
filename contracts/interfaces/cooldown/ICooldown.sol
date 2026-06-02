@@ -5,12 +5,12 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title  ICooldown
- * @notice Shared base for cooldown silo contracts. Defines the balance
- *         shape exposed to viewers and the finalisation entry points
- *         shared between every concrete cooldown variant.
+ * @notice Shared base for cooldown silo contracts. Defines the user
+ *         balance view shape and the permissionless finalisation
+ *         entrypoints used by every concrete variant.
  */
 interface ICooldown {
-    /** @dev Aggregate view of a user's silo state for a given token. */
+    // @notice Aggregate view of a user's silo state for a given token.
     struct TBalanceState {
         uint256 pending;
         uint256 claimable;
@@ -38,7 +38,14 @@ interface ICooldown {
         uint256 amount
     );
 
+    // @notice Finalise claimable entries for `user` on `token`.
     function finalize(IERC20 token, address user) external returns (uint256 claimed);
+
+    /**
+     * @notice Same as {finalize} but evaluates claimability at the
+     *         supplied timestamp. On-chain enforcement still requires
+     *         `at <= block.timestamp`.
+     */
     function finalize(IERC20 token, address user, uint256 at) external returns (uint256 claimed);
 
     function balanceOf(IERC20 token, address user) external view returns (TBalanceState memory);

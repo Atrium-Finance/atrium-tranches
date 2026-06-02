@@ -15,15 +15,15 @@ import { CDOComponent } from "../base/CDOComponent.sol";
 
 /**
  * @title  Tranche
- * @notice Upgradeable ERC4626 tranche vault. Custom withdrawal mechanics
- *         routed through the CDO: every exit converges on `_withdraw`
- *         and branches by `TExitMode` (ERC4626 / SharesLock / Fee).
+ * @notice Upgradeable ERC4626 tranche vault. Every exit converges on
+ *         {_withdraw} and branches by `TExitMode`
+ *         (ERC4626 / SharesLock / Fee).
  */
 contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
     /**
-     * @notice Minimum non-zero share supply. Donation-attack mitigation —
-     *         `_onAfterWithdrawalChecks` reverts when totalSupply drops
-     *         below this floor (and stays non-zero).
+     * @notice Minimum non-zero share supply. Donation-attack
+     *         mitigation — `_onAfterWithdrawalChecks` reverts when
+     *         `totalSupply` is non-zero but below this floor.
      */
     uint256 private constant MIN_SHARES = 0.1 ether;
 
@@ -39,7 +39,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         uint32 cooldownSeconds
     );
 
-    /** @notice Initialize the tranche vault and bind it to its CDO. */
+    // @notice Initialise the vault and bind it to its CDO.
     function initialize(IERC20 asset_, string memory name_, string memory symbol_, ICDO cdo_) public initializer {
         __ERC20_init_unchained(name_, symbol_);
         __ERC4626_init_unchained(asset_);
@@ -47,67 +47,51 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         cdo = cdo_;
     }
 
-    /**
-     * @inheritdoc ITranche
-     */
+    // @inheritdoc ITranche
     function configure() external onlyCDO {
         address strategy = address(cdo.strategy());
         IERC20[] memory tokens = IStrategy(strategy).getSupportedTokens();
         uint256 len = tokens.length;
-        // `i` bounded by `len`; `len` bounded by Strategy admin.
         for (uint256 i; i < len;) {
             SafeERC20.forceApprove(tokens[i], strategy, type(uint256).max);
             unchecked { ++i; }
         }
     }
 
-    // ---------------------------------------------------------------
-    // Total assets / max gates — forward to CDO
-    // ---------------------------------------------------------------
-
-    /** @notice Total assets attributable to this tranche, sourced from the CDO. */
     function totalAssets() public view override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         return cdo.totalAssets(address(this));
     }
 
-    /** @notice Maximum deposit accepted by the CDO for this tranche. */
     function maxDeposit(address) public view override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         return cdo.maxDeposit(address(this));
     }
 
-    /** @notice Maximum mint translated from {maxDeposit} via the standard ERC4626 conversion. */
     function maxMint(address) public view override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         uint256 assets = cdo.maxDeposit(address(this));
         if (assets == type(uint256).max) return type(uint256).max;
         return convertToShares(assets);
     }
 
-    /** @notice Maximum withdraw the CDO allows for `owner` (base-asset units). */
     function maxWithdraw(address owner) public view override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         return cdo.maxWithdraw(address(this), owner);
     }
 
-    /** @notice Maximum redeem (shares) for `owner`, converted from {maxWithdraw}. */
     function maxRedeem(address owner) public view override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         uint256 assets = cdo.maxWithdraw(address(this), owner);
         return convertToShares(assets);
     }
 
-    /**
-     * @inheritdoc ITranche
-     */
+    // @inheritdoc ITranche
     function maxWithdraw(address token, address owner) public view returns (uint256) {
         uint256 baseAssets = cdo.maxWithdraw(address(this), owner);
         return cdo.strategy().convertToTokens(token, baseAssets, Math.Rounding.Ceil);
     }
 
-    // ---------------------------------------------------------------
-    // Fee-aware previews
-    // ---------------------------------------------------------------
-
     /**
-     * @notice Public preview of net assets received for burning `sharesGross`.
-     * @dev    Discounts the public exit fee from `calculateExitMode(this, address(0))`.
+     * @notice Net assets received for burning `sharesGross`, after
+     *         the public exit fee discount.
+     * @dev    sharesFee = floor(sharesGross × fee / 1e18)
+     *         assetsNet = super.previewRedeem(sharesGross - sharesFee)
      */
     function previewRedeem(uint256 sharesGross)
         public view override(ERC4626Upgradeable, IERC4626) returns (uint256 assetsNet)
@@ -119,8 +103,11 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
     }
 
     /**
-     * @notice Public preview of gross shares burned to receive `assetsNet`.
-     * @dev    Inverts the fee discount applied in {previewRedeem}.
+     * @notice Gross shares burned to receive `assetsNet`.
+     * @dev    Inverse of {previewRedeem}:
+     *           sharesNet  = super.previewWithdraw(assetsNet)
+     *           sharesFee  = floor(sharesNet × fee / (1e18 - fee))
+     *           sharesGross = sharesNet + sharesFee
      */
     function previewWithdraw(uint256 assetsNet)
         public view override(ERC4626Upgradeable, IERC4626) returns (uint256 sharesGross)
@@ -128,14 +115,9 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         (, uint256 fee, ) = cdo.calculateExitMode(address(this), address(0));
         if (fee == 0) return super.previewWithdraw(assetsNet);
         uint256 sharesNet = super.previewWithdraw(assetsNet);
-        // sharesGross = sharesNet / (1 − fee) = sharesNet + sharesNet × fee / (1e18 − fee)
         uint256 sharesFee = Math.mulDiv(sharesNet, fee, 1e18 - fee, Math.Rounding.Floor);
         sharesGross = sharesNet + sharesFee;
     }
-
-    // ---------------------------------------------------------------
-    // Deposit / mint — unchanged from prior specs
-    // ---------------------------------------------------------------
 
     function deposit(
         uint256 assets,
@@ -153,12 +135,19 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         assets = super.mint(shares, receiver);
     }
 
-    /** @dev Forward freshly-deposited assets to the CDO after ERC4626 finalises. */
+    /**
+     * @dev Hook fires after `super._deposit` pulled assets + minted
+     *      shares; forward the assets to CDO for staking.
+     */
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
         super._deposit(caller, receiver, assets, shares);
         cdo.deposit(address(this), asset(), assets, assets);
     }
 
+    /**
+     * @notice Meta-token deposit. `token == asset()` delegates to the
+     *         standard ERC4626 path; otherwise converts via Strategy.
+     */
     function deposit(address token, uint256 tokenAmount, address receiver) public virtual override returns (uint256) {
         if (token == asset()) {
             return deposit(tokenAmount, receiver);
@@ -173,6 +162,10 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         return shares;
     }
 
+    /**
+     * @notice Meta-token mint. `token == asset()` delegates to the
+     *         standard ERC4626 path; otherwise converts via Strategy.
+     */
     function mint(address token, uint256 shares, address receiver) public virtual override returns (uint256) {
         if (token == asset()) {
             return mint(shares, receiver);
@@ -189,7 +182,6 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         return tokenAssets;
     }
 
-    /** @dev Meta-vault deposit core, shared by token-routed `deposit` and `mint`. */
     function _deposit(
         address token,
         address caller,
@@ -213,25 +205,12 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         emit OnPrimeDeposit(receiver, token, tokenAssets, shares);
     }
 
-    // ---------------------------------------------------------------
-    // Withdraw — standard ERC4626 entry points delegate to token-routed
-    // ---------------------------------------------------------------
-
-    /**
-     * @notice Standard ERC4626 withdraw. Delegates to the token-routed
-     *         variant with `token = asset()` so every exit path routes
-     *         through `_withdraw` and honours the CDO's exit mode.
-     */
     function withdraw(uint256 assets, address receiver, address owner)
         public override(ERC4626Upgradeable, IERC4626) returns (uint256)
     {
         return withdraw(asset(), assets, receiver, owner);
     }
 
-    /**
-     * @notice Standard ERC4626 redeem. Delegates to the token-routed
-     *         variant with `token = asset()`.
-     */
     function redeem(uint256 shares, address receiver, address owner)
         public override(ERC4626Upgradeable, IERC4626) returns (uint256)
     {
@@ -239,9 +218,9 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
     }
 
     /**
-     * @notice Token-routed withdraw (default). Forwards to the
-     *         five-arg overload with `Dynamic` — caller opts out of
-     *         mode-slippage validation.
+     * @notice Token-routed withdraw. Forwards to the 5-arg overload
+     *         with `Dynamic` — caller opts out of mode-slippage
+     *         validation.
      */
     function withdraw(address token, uint256 tokenAmount, address receiver, address owner)
         public virtual override returns (uint256)
@@ -255,12 +234,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         );
     }
 
-    /**
-     * @notice Token-routed withdraw with mode-slippage guard.
-     * @dev    `params.exitMode == TExitMode.Dynamic` opts out of
-     *         validation. Otherwise all three params must equal the
-     *         CDO's live `calculateExitMode` result for this owner.
-     */
+    // @inheritdoc ITranche
     function withdraw(
         address token,
         uint256 tokenAmount,
@@ -287,9 +261,8 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
     }
 
     /**
-     * @notice Token-routed redeem (default). Forwards to the five-arg
-     *         overload with `Dynamic` — caller opts out of
-     *         mode-slippage validation.
+     * @notice Token-routed redeem. Forwards to the 5-arg overload
+     *         with `Dynamic`.
      */
     function redeem(address token, uint256 shares, address receiver, address owner)
         public virtual override returns (uint256)
@@ -303,9 +276,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         );
     }
 
-    /**
-     * @notice Token-routed redeem with mode-slippage guard.
-     */
+    // @inheritdoc ITranche
     function redeem(
         address token,
         uint256 shares,
@@ -330,7 +301,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         _withdraw(token, _msgSender(), receiver, owner, baseAssets, tokenAssets, shares, exitMode, exitFee, cooldownSec);
     }
 
-    /** @dev Quote helper shared with `withdraw` / `previewWithdraw`. */
+    // @dev sharesGross = sharesNet + floor(sharesNet × fee / (1e18 - fee)).
     function _quoteWithdrawShares(uint256 assetsNet, uint256 fee) internal view returns (uint256 sharesGross) {
         uint256 sharesNet = super.previewWithdraw(assetsNet);
         if (fee == 0) return sharesNet;
@@ -338,7 +309,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         sharesGross = sharesNet + sharesFee;
     }
 
-    /** @dev Quote helper shared with `redeem` / `previewRedeem`. */
+    // @dev assetsNet = super.previewRedeem(sharesGross - floor(sharesGross × fee / 1e18)).
     function _quoteRedeemAssets(uint256 sharesGross, uint256 fee) internal view returns (uint256 assetsNet) {
         if (fee == 0) return super.previewRedeem(sharesGross);
         uint256 sharesFee = Math.mulDiv(sharesGross, fee, 1e18, Math.Rounding.Floor);
@@ -346,11 +317,11 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
     }
 
     /**
-     * @dev Internal withdraw router. Order: spend allowance →
-     *      branch by mode. SharesLock transfers shares into the silo
-     *      (burn deferred to silo finalisation); ERC4626 / Fee burns
-     *      now and forwards to the CDO. Fee path additionally accrues
-     *      the gross-vs-net delta against the reserve.
+     * @dev Mode-branch router. Order: spend allowance → branch.
+     *      SharesLock moves shares into the silo (burn deferred to
+     *      silo finalisation). ERC4626/Fee burns now and forwards;
+     *      Fee path additionally accrues the gross-vs-net delta into
+     *      the reserve.
      */
     function _withdraw(
         address token,
@@ -369,13 +340,10 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         }
 
         if (exitMode == TExitMode.SharesLock) {
-            // Move shares into the silo; silo finalises on behalf of
-            // the owner after cooldown. No burn here — silo redeems
-            // via Tranche later, which burns then.
             address silo = address(cdo.sharesCooldown());
             _transfer(owner, silo, sharesGross);
 
-            // Recognise external receiver for the silo's slot accounting.
+            // External receiver heuristic for the silo's slot accounting.
             address initialFrom =
                 (caller == receiver || owner == receiver) ? receiver : owner;
 
@@ -391,8 +359,8 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
             return;
         }
 
-        // ERC4626 + Fee paths share the burn + forward path. Fee path
-        // additionally accrues fee against the reserve.
+        // fee = baseAssetsGross - baseAssets (delta between fee-free quote
+        // and the net entitlement the caller asked to receive).
         uint256 baseAssetsGross = super.previewRedeem(sharesGross);
         uint256 fee = baseAssetsGross > baseAssets ? baseAssetsGross - baseAssets : 0;
 
@@ -411,9 +379,8 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
 
     /**
      * @inheritdoc ITranche
-     * @dev Permissionless. Caller's allowance is spent when caller != owner.
-     *      Uses the fee-free `super.previewRedeem` to avoid double-discount —
-     *      this entry IS the fee accrual.
+     * @dev Uses fee-free `super.previewRedeem` to avoid double-discount
+     *      — this entry IS the fee accrual.
      */
     function burnSharesAsFee(uint256 shares, address owner) external returns (uint256 assets) {
         cdo.updateAccounting();
@@ -435,15 +402,9 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         cdo.updateBalanceFlow();
     }
 
-    // ---------------------------------------------------------------
-    // Internal helpers (16b)
-    // ---------------------------------------------------------------
-
     /**
-     * @dev Reverts `RedemptionParamsMismatch` when `params` disagree
-     *      with the CDO's live mode payload. Skipped entirely when
-     *      `params.exitMode == TExitMode.Dynamic` — the caller-side
-     *      opt-out sentinel.
+     * @dev Skipped when `params.exitMode == Dynamic` (caller-side
+     *      opt-out sentinel).
      */
     function _validateRedemptionParams(
         TRedemptionParams memory params,
@@ -465,9 +426,8 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
     }
 
     /**
-     * @dev Donation-attack mitigation. Allows a clean drain
-     *      (`totalSupply == 0`) but rejects a residual dust holder
-     *      below `MIN_SHARES`.
+     * @dev Allow `totalSupply == 0` (clean drain) but reject a
+     *      residual dust holder below `MIN_SHARES`.
      */
     function _onAfterWithdrawalChecks() internal view {
         uint256 supply = totalSupply();
@@ -476,31 +436,21 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         }
     }
 
-    // ---------------------------------------------------------------
-    // External quote helpers + meta-token previews (16b)
-    // ---------------------------------------------------------------
-
-    /**
-     * @inheritdoc ITranche
-     */
+    // @inheritdoc ITranche
     function quoteWithdraw(uint256 assetsNet, uint256 fee)
         public view returns (uint256 sharesGross)
     {
         return _quoteWithdrawShares(assetsNet, fee);
     }
 
-    /**
-     * @inheritdoc ITranche
-     */
+    // @inheritdoc ITranche
     function quoteRedeem(uint256 sharesGross, uint256 fee)
         public view returns (uint256 assetsNet)
     {
         return _quoteRedeemAssets(sharesGross, fee);
     }
 
-    /**
-     * @inheritdoc ITranche
-     */
+    // @inheritdoc ITranche
     function previewWithdraw(address token, uint256 tokenAmount)
         public view override returns (uint256 sharesGross)
     {
@@ -509,9 +459,7 @@ contract Tranche is CDOComponent, ERC4626Upgradeable, ITranche {
         sharesGross = _quoteWithdrawShares(baseAssets, fee);
     }
 
-    /**
-     * @inheritdoc ITranche
-     */
+    // @inheritdoc ITranche
     function previewRedeem(address token, uint256 shares)
         public view override returns (uint256 tokenAssetsNet)
     {

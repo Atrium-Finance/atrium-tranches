@@ -7,12 +7,12 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 import { IAccessControlManager } from "./interfaces/IAccessControlManager.sol";
 
 /**
- * @title Strata Access Control Contract.
- * @dev The AccessControlled contract is a wrapper around the OpenZeppelin AccessControl contract
- *      It provides a standardized way to control access to methods within the Strata Smart Contract Ecosystem.
- *      The contract allows the owner to set an AccessControlManager contract address.
+ * @title  AccessControlled
+ * @notice Shared base for every consumer contract that needs the
+ *         protocol's role registry. Delegates `onlyRole(...)` checks
+ *         to the external {IAccessControlManager} so role state is
+ *         not duplicated per-contract.
  */
-
 abstract contract AccessControlled is Initializable, Ownable2StepUpgradeable, ReentrancyGuard {
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant UPDATER_CDO_APR_ROLE = keccak256("UPDATER_CDO_APR_ROLE");
@@ -22,25 +22,19 @@ abstract contract AccessControlled is Initializable, Ownable2StepUpgradeable, Re
     bytes32 public constant COOLDOWN_WORKER_ROLE = keccak256("COOLDOWN_WORKER_ROLE");
     bytes32 public constant PROPOSER_CONFIG_ROLE = keccak256("PROPOSER_CONFIG_ROLE");
 
-    /// @notice Access control manager contract
     IAccessControlManager public acm;
-
-    // @notice Two-step configuration updater contract
     address public twoStepConfigManager;
 
     uint256[48] private __gap;
 
-    /// @notice Emitted when access control manager contract address is changed
     event NewAccessControlManager(address accessControlManager);
-    /// @notice Emitted when two step config manager is changed
     event NewTwoStepConfigManager(address twoStepConfigManager);
 
-    /// @notice Thrown when the action is prohibited by AccessControlManager
     error Unauthorized(address sender, address calledContract, bytes4 sel);
     error AccessControlUnauthorizedAccount(address account, bytes32 neededRole);
     error ZeroAddress();
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    // @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
@@ -58,31 +52,21 @@ abstract contract AccessControlled is Initializable, Ownable2StepUpgradeable, Re
     function AccessControlled_init(address owner, address accessControlManager) internal onlyInitializing {
         __Ownable_init_unchained(owner);
         __AccessControlled_init_unchained(accessControlManager);
-        // ReentrancyGuard in OZ 5.x is the non-upgradeable variant using
-        // ERC-7201 namespaced storage; it has no initializer and the zero
-        // slot is treated as "not entered".
+        // OZ 5.x ships ReentrancyGuard as a non-upgradeable contract with
+        // ERC-7201 namespaced storage — no initializer, zero slot is "not
+        // entered".
     }
 
     function __AccessControlled_init_unchained(address accessControlManager) internal onlyInitializing {
         setAccessControlManagerInner(accessControlManager);
     }
 
-    /**
-     * @notice Sets the address of AccessControlManager
-     * @dev Admin function to set address of AccessControlManager
-     * @param accessControlManager_ The new address of the AccessControlManager
-     * @custom:event Emits NewAccessControlManager event
-     * @custom:access Only Governance
-     */
+    // @notice Set the AccessControlManager registry.
     function setAccessControlManager(address accessControlManager_) external onlyOwner {
         setAccessControlManagerInner(accessControlManager_);
     }
 
-    /**
-     * @notice Sets the address of TwoStepConfigManager
-     * @dev Admin function to set address of TwoStepConfigManager
-     * @param twoStepConfigManager_ The new address of the TwoStepConfigManager
-     */
+    // @notice Set the two-step config manager.
     function setTwoStepConfigManager(address twoStepConfigManager_) external onlyOwner {
         if (twoStepConfigManager_ == address(0)) {
             revert ZeroAddress();
@@ -91,10 +75,6 @@ abstract contract AccessControlled is Initializable, Ownable2StepUpgradeable, Re
         emit NewTwoStepConfigManager(twoStepConfigManager_);
     }
 
-    /**
-     * @dev Internal function to set address of AccessControlManager
-     * @param accessControlManager The new address of the AccessControlManager
-     */
     function setAccessControlManagerInner(address accessControlManager) internal {
         if (accessControlManager == address(0)) {
             revert ZeroAddress();
@@ -104,8 +84,8 @@ abstract contract AccessControlled is Initializable, Ownable2StepUpgradeable, Re
     }
 
     /**
-     * @notice Reverts if the call is not allowed by AccessControlManager
-     * @param sel Method signature
+     * @notice Reverts when the registry rejects the call-based
+     *         permission for `sel`.
      */
     function _checkAccessAllowed(bytes4 sel) internal view {
         bool isAllowedToCall = acm.isAllowedToCall(msg.sender, sel);

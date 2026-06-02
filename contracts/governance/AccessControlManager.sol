@@ -23,23 +23,15 @@ contract AccessControlManager is
     UUPSUpgradeable,
     IAccessControlManager
 {
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    // @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
     function initialize(address admin) external initializer {
         __AccessControl_init();
-        // NOTE: spec calls for `__UUPSUpgradeable_init()` — that initializer
-        // does NOT exist in OZ 5.x (UUPSUpgradeable is implementation-only,
-        // no init step needed). Same OZ 5.x substitution pattern as the
-        // missing `ReentrancyGuardUpgradeable` documented in specs 06/07a.
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
-
-    // -------------------------------------------------------------
-    // Call-based permissions
-    // -------------------------------------------------------------
 
     function grantCall(address contractAddress, bytes4 sel, address accountToPermit)
         external override
@@ -60,9 +52,8 @@ contract AccessControlManager is
     function isAllowedToCall(address account, bytes4 sel)
         external view override returns (bool)
     {
-        // `msg.sender` is the consumer contract performing the check.
-        // First try contract-specific permission, then fall back to
-        // the global wildcard (contractAddress == 0).
+        // Consumer contract is `msg.sender`; check contract-specific
+        // first, then fall back to the global wildcard.
         if (hasRole(_roleFor(msg.sender, sel), account)) return true;
         return hasRole(_roleForGlobal(sel), account);
     }
@@ -73,15 +64,10 @@ contract AccessControlManager is
         return hasRole(_roleFor(contractAddress, sel), account);
     }
 
-    // -------------------------------------------------------------
-    // Internal — role encoding
-    // -------------------------------------------------------------
-
     /**
-     * @dev Pack `(contractAddress: 20B, padding: 8B, sel: 4B)` into a
-     *      bytes32. Reverts on degenerate inputs to keep
-     *      `grantCall(zero, zero, x)` from collapsing into the
-     *      role-based namespace.
+     * @dev `role = (contractAddress << 96) | uint32(sel)`. Reverts on
+     *      zero inputs so `grantCall(0, 0, x)` cannot collapse into
+     *      the role-based namespace.
      */
     function _roleFor(address contractAddress, bytes4 sel)
         internal pure returns (bytes32 role)
@@ -94,24 +80,18 @@ contract AccessControlManager is
     }
 
     /**
-     * @dev Global permission slot — same packing with
-     *      `contractAddress == address(0)` reserved for the wildcard
-     *      namespace. Internal-only entry that bypasses the
-     *      degenerate-input check.
+     * @dev Wildcard namespace: same packing with `contractAddress == 0`.
+     *      Internal-only; bypasses the degenerate-input check used by
+     *      {_roleFor}.
      */
     function _roleForGlobal(bytes4 sel) internal pure returns (bytes32 role) {
         if (sel == bytes4(0)) revert StrictPermissionOnly();
         role = bytes32(uint256(uint32(sel)));
     }
 
-    // -------------------------------------------------------------
-    // UUPS upgrade gating
-    // -------------------------------------------------------------
-
     function _authorizeUpgrade(address newImplementation)
         internal override onlyRole(DEFAULT_ADMIN_ROLE)
     {}
 
-    // Reserved storage gap for future upgrades.
     uint256[50] private __gap;
 }
