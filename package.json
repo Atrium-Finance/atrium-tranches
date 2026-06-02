@@ -17,11 +17,20 @@
     "test:coverage:critical": "hardhat test --coverage && node scripts/check-critical-paths.js",
     "test:gas": "hardhat test --gas-stats",
     "clean": "hardhat clean",
-    "node": "hardhat node"
+    "node": "hardhat node",
+    "compute:roles": "hardhat run scripts/compute-role-hashes.ts",
+    "deploy:mainnet": "hardhat ignition deploy ignition/modules/Atrium.ts --network arbitrum --parameters ignition/parameters/mainnet.json",
+    "deploy:visualize": "hardhat ignition visualize ignition/modules/Atrium.ts --parameters ignition/parameters/mainnet.json",
+    "verify:mainnet": "hardhat ignition verify chain-42161",
+    "e2e:deposit": "ATRIUM_NETWORK=arbitrum hardhat run scripts/e2e-deposit.ts",
+    "e2e:withdraw": "ATRIUM_NETWORK=arbitrum hardhat run scripts/e2e-withdraw.ts"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-ignition": "^3.1.5",
+    "@nomicfoundation/hardhat-ignition-viem": "^3.1.5",
     "@nomicfoundation/hardhat-network-helpers": "^3.0.0",
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
+    "@nomicfoundation/hardhat-verify": "^3.0.17",
     "@types/chai": "^4.3.20",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.10.0",

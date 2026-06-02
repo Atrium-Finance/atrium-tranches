@@ -1,0 +1,32 @@
+{
+  "Atrium": {
+    "_comment_identities": "REPLACE all three before launch. owner = deployer EOA (also ACM admin); transfer to multisig post-audit. keeper = APR-feed / sampling bot EOA. treasury = reserve-drain recipient.",
+    "owner": "0x369e038e3DC8Ab7d5C61b1561abB998a9064C70e",
+    "keeper": "0x369e038e3DC8Ab7d5C61b1561abB998a9064C70e",
+    "treasury": "0x369e038e3DC8Ab7d5C61b1561abB998a9064C70e",
+
+    "_comment_externals": "Arbitrum One. USDai/sUSDai are USD.AI; aavePool is Aave V3 Pool; benchmarkTokens are the Aave-supply-APR basket (USDC, USDT).",
+    "sUSDai": "0x5f02c1bec4ad5de9b7abf999c1f0854d4836a049",
+    "USDai": "0x0a1a1a107e45b7ced86833863f482bc5f4ed82ef",
+    "aavePool": "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    "benchmarkTokens": ["0xaf88d065e77c8cC2239327C5EDb3A432268e5831", "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"],
+
+    "_comment_oracle": "roundStaleAfter in seconds; feedDescription is informational.",
+    "roundStaleAfter": 86400,
+    "feedDescription": "Atrium sUSDai APR Feed",
+
+    "_comment_accounting": "Seeded Senior target/base APR, UD60x18 (1e18). 0.04e18 = 4%, 0.12e18 = 12%. Static until the Accounting feed amendment lands.",
+    "aprTargetDefault": "40000000000000000",
+    "aprBaseDefault": "120000000000000000",
+
+    "_comment_cooldowns": "Per-tranche Strategy withdrawal cooldown (seconds), max 7 days. 0 = instant (skeleton/E2E default). Set real durations before public launch.",
+    "cooldownJr": 0,
+    "cooldownMz": 0,
+    "cooldownSr": 0,
+
+    "_comment_exitfees": "Per-tranche fallback exit fee, UD60x18 (1e18), cap 0.1e18. 0 = no fee.",
+    "exitFeeJr": 0,
+    "exitFeeMz": 0,
+    "exitFeeSr": 0
+  }
+}
