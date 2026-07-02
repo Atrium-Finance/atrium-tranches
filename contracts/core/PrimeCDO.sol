@@ -202,6 +202,12 @@ contract PrimeCDO is AccessControlled, ICDO {
 
         // Pattern B/3: Strategy pulls directly from the calling Tranche.
         _strategy.deposit(msg.sender, token, tokenAmount, baseAssets, msg.sender);
+
+        // Record the inflow so the tranche bucket and `nav` grow by the
+        // deposited principal. Without this the deposit surfaces as a
+        // positive strategy delta on the next updateAccounting and is
+        // mis-distributed as yield (reserve skim + cross-tranche split).
+        _recordDeposit(_kindOf(msg.sender), baseAssets);
     }
 
     /**
@@ -363,6 +369,13 @@ contract PrimeCDO is AccessControlled, ICDO {
         _strategy.reduceReserve(token, amount, treasury);
 
         emit ReserveReduced(token, amount);
+    }
+
+    function _recordDeposit(TrancheKind kind, uint256 baseAssets) internal {
+        uint256 jrIn = kind == TrancheKind.JUNIOR ? baseAssets : 0;
+        uint256 mzIn = kind == TrancheKind.MEZZANINE ? baseAssets : 0;
+        uint256 srIn = kind == TrancheKind.SENIOR ? baseAssets : 0;
+        _accounting.updateBalanceFlow(jrIn, 0, mzIn, 0, srIn, 0);
     }
 
     function _recordWithdraw(TrancheKind kind, uint256 baseAssets) internal {

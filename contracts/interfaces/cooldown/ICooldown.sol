@@ -44,10 +44,10 @@ interface ICooldown {
     /**
      * @notice Same as {finalize} but evaluates claimability at the
      *         supplied timestamp. On-chain enforcement still requires
-     *         `at <= block.timestamp`.
+     *         `evalAt <= block.timestamp`.
      */
-    function finalize(IERC20 token, address user, uint256 at) external returns (uint256 claimed);
+    function finalize(IERC20 token, address user, uint256 evalAt) external returns (uint256 claimed);
 
     function balanceOf(IERC20 token, address user) external view returns (TBalanceState memory);
-    function balanceOf(IERC20 token, address user, uint256 at) external view returns (TBalanceState memory);
+    function balanceOf(IERC20 token, address user, uint256 evalAt) external view returns (TBalanceState memory);
 }

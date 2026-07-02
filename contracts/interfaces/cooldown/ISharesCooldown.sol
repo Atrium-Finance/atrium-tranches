@@ -84,8 +84,8 @@ interface ISharesCooldown is ICooldown {
      */
     function finalize(ITranche vault, address token, address user) external returns (uint256 claimed);
 
-    // @notice Same as {finalize} but evaluated at `at`.
-    function finalize(ITranche vault, address token, address user, uint256 at) external returns (uint256 claimed);
+    // @notice Same as {finalize} but evaluated at `evalAt`.
+    function finalize(ITranche vault, address token, address user, uint256 evalAt) external returns (uint256 claimed);
 
     /**
      * @notice Finalise all claimable requests for `user` using `token`

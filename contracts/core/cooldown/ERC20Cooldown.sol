@@ -74,17 +74,17 @@ contract ERC20Cooldown is IERC20Cooldown, CooldownBase {
     }
 
     // @inheritdoc ICooldown
-    function finalize(IERC20 token, address user, uint256 at) external override returns (uint256) {
-        return _finalize(token, user, at);
+    function finalize(IERC20 token, address user, uint256 evalAt) external override returns (uint256) {
+        return _finalize(token, user, evalAt);
     }
 
     /**
-     * @dev Swap-pop iteration; `at <= block.timestamp` enforced.
+     * @dev Swap-pop iteration; `evalAt <= block.timestamp` enforced.
      *      When `cooldownDisabled[token]` is true, all entries are
      *      claimable regardless of `unlockAt`.
      */
-    function _finalize(IERC20 token, address user, uint256 at) internal returns (uint256 claimed) {
-        if (at > block.timestamp) revert InvalidTime();
+    function _finalize(IERC20 token, address user, uint256 evalAt) internal returns (uint256 claimed) {
+        if (evalAt > block.timestamp) revert InvalidTime();
 
         TRequest[] storage requests = _activeRequests[address(token)][user];
         bool isCooldownActive = !cooldownDisabled[address(token)];
@@ -92,7 +92,7 @@ contract ERC20Cooldown is IERC20Cooldown, CooldownBase {
         uint256 len = requests.length;
         for (uint256 i; i < len;) {
             TRequest memory req = requests[i];
-            if (isCooldownActive && req.unlockAt > at) {
+            if (isCooldownActive && req.unlockAt > evalAt) {
                 unchecked { i++; }
                 continue;
             }
@@ -127,13 +127,13 @@ contract ERC20Cooldown is IERC20Cooldown, CooldownBase {
     }
 
     // @inheritdoc ICooldown
-    function balanceOf(IERC20 token, address user, uint256 at)
+    function balanceOf(IERC20 token, address user, uint256 evalAt)
         external view override returns (ICooldown.TBalanceState memory)
     {
-        return _balanceOf(token, user, at);
+        return _balanceOf(token, user, evalAt);
     }
 
-    function _balanceOf(IERC20 token, address user, uint256 at)
+    function _balanceOf(IERC20 token, address user, uint256 evalAt)
         internal view returns (ICooldown.TBalanceState memory)
     {
         TRequest[] storage requests = _activeRequests[address(token)][user];
@@ -147,7 +147,7 @@ contract ERC20Cooldown is IERC20Cooldown, CooldownBase {
 
         for (uint256 i; i < len; i++) {
             TRequest memory req = requests[i];
-            if (isCooldownActive && req.unlockAt > at) {
+            if (isCooldownActive && req.unlockAt > evalAt) {
                 pending += req.amount;
                 if (nextUnlockAt == 0 || req.unlockAt < nextUnlockAt) {
                     nextUnlockAt = req.unlockAt;

@@ -43,19 +43,19 @@ contract MockStrategy is Strategy {
         uint256 /*tokenAmount*/,
         uint256 baseAssets,
         address /*owner*/
-    ) external override onlyCDO returns (uint256) {
+    ) external view override onlyCDO returns (uint256) {
         return baseAssets;
     }
 
     function withdraw(
         address, address, uint256 tokenAmount, uint256, address, address
-    ) external override onlyCDO returns (uint256) {
+    ) external view override onlyCDO returns (uint256) {
         return tokenAmount;
     }
 
     function withdraw(
         address, address, uint256 tokenAmount, uint256, address, address, bool
-    ) external override onlyCDO returns (uint256) {
+    ) external view override onlyCDO returns (uint256) {
         return tokenAmount;
     }
 
