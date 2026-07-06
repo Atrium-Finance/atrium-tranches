@@ -1,5 +1,5 @@
 {
-  "name": "prime-contracts-v2",
+  "name": "atrium-tranches",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -20,7 +20,7 @@
     "node": "hardhat node",
     "compute:roles": "hardhat run scripts/compute-role-hashes.ts",
     "deploy:mainnet": "hardhat ignition deploy ignition/modules/Atrium.ts --network arbitrum --parameters ignition/parameters/mainnet.json",
-    "deploy:visualize": "hardhat ignition visualize ignition/modules/Atrium.ts --parameters ignition/parameters/mainnet.json",
+    "deploy:visualize": "hardhat ignition visualize ignition/modules/Atrium.ts",
     "verify:mainnet": "hardhat ignition verify chain-42161",
     "e2e:deposit": "ATRIUM_NETWORK=arbitrum hardhat run scripts/e2e-deposit.ts",
     "e2e:withdraw": "ATRIUM_NETWORK=arbitrum hardhat run scripts/e2e-withdraw.ts"
