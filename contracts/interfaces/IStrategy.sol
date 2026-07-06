@@ -1,144 +1,92 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.35;
 
-// ══════════════════════════════════════════════════════════════════════
-//  PRIMEVAULTS V3 — IStrategy
-//  Strategy interface for yield source adapters (1 CDO = 1 Strategy)
-//  See: docs/PV_V3_FINAL_v34.md section 15
-// ══════════════════════════════════════════════════════════════════════
-
-/** @notice Type of withdrawal mechanism returned by a strategy */
-enum WithdrawType {
-    INSTANT,
-    ASSETS_LOCK
-}
-
-/** @notice Result returned by strategy withdraw operations */
-struct WithdrawResult {
-    WithdrawType wType;
-    uint256 amountOut;
-    uint256 cooldownId;
-    address cooldownHandler;
-    uint256 unlockTime;
-}
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ICDOComponent } from "./ICDOComponent.sol";
 
 /**
- * @title IStrategy
- * @notice Interface for yield source strategy adapters
- * @dev Each PrimeCDO is paired 1:1 with exactly one strategy implementation.
- *      Strategies handle deposit/withdraw routing to the underlying yield protocol.
+ * @title  IStrategy
+ * @notice Investment strategy holding protocol funds, converting
+ *         between supported tokens and the base asset, and reporting
+ *         total assets in base-asset units.
  */
-interface IStrategy {
-    // ═══════════════════════════════════════════════════════════════════
-    //  EVENTS
-    // ═══════════════════════════════════════════════════════════════════
+interface IStrategy is ICDOComponent {
+    /**
+     * @notice Pull `tokenAmount` of `token` from `owner` and integrate
+     *         into the strategy's holdings.
+     * @param  tranche     Initiating tranche (informational).
+     * @param  token       Deposited token. Must be supported.
+     * @param  tokenAmount Amount to pull from `owner`.
+     * @param  baseAssets  Pre-computed base-asset equivalent.
+     * @param  owner       Source of `safeTransferFrom`.
+     */
+    function deposit(
+        address tranche,
+        address token,
+        uint256 tokenAmount,
+        uint256 baseAssets,
+        address owner
+    ) external returns (uint256);
 
     /**
-     * @notice Emitted when tokens are deposited into the yield source
-     * @param token The deposited token address
-     * @param amount The amount deposited
-     * @param shares The yield-bearing shares received
+     * @notice Release holdings to `receiver` in `token`. Applies the
+     *         strategy's configured per-tranche cooldown.
      */
-    event Deposited(address indexed token, uint256 amount, uint256 shares);
+    function withdraw(
+        address tranche,
+        address token,
+        uint256 tokenAmount,
+        uint256 baseAssets,
+        address sender,
+        address receiver
+    ) external returns (uint256);
 
     /**
-     * @notice Emitted when tokens are withdrawn from the yield source
-     * @param token The withdrawn token address
-     * @param amount The amount withdrawn
-     * @param shares The yield-bearing shares redeemed
+     * @notice Same as {withdraw}, with an explicit flag to bypass the
+     *         cooldown — set when the user has already served their
+     *         lock elsewhere (e.g. SharesCooldown silo).
      */
-    event Withdrawn(address indexed token, uint256 amount, uint256 shares);
+    function withdraw(
+        address tranche,
+        address token,
+        uint256 tokenAmount,
+        uint256 baseAssets,
+        address sender,
+        address receiver,
+        bool shouldSkipCooldown
+    ) external returns (uint256);
 
     /**
-     * @notice Emitted when an emergency withdrawal is executed
-     * @param amount The total amount recovered
+     * @notice Transfer `tokenAmount` of `token` to `receiver`. Used
+     *         by `CDO.reduceReserve` for treasury drain.
      */
-    event EmergencyWithdrawn(uint256 amount);
+    function reduceReserve(
+        address token,
+        uint256 tokenAmount,
+        address receiver
+    ) external;
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  MUTATIVE
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Deposit the base asset into the yield source
-     * @dev Only callable by the paired PrimeCDO. Transfers base asset from caller.
-     * @param amount Amount of base asset to deposit
-     * @return shares Yield-bearing shares received from the yield source
-     */
-    function deposit(uint256 amount) external returns (uint256 shares);
-
-    /**
-     * @notice Deposit a supported token (may differ from base asset) into the yield source
-     * @dev Only callable by the paired PrimeCDO. Handles token conversion if needed.
-     * @param token Address of the token to deposit
-     * @param amount Amount of token to deposit
-     * @return shares Yield-bearing shares received from the yield source
-     */
-    function depositToken(address token, uint256 amount) external returns (uint256 shares);
-
-    /**
-     * @notice Withdraw base-equivalent value from the yield source
-     * @dev Only callable by the paired PrimeCDO. May return instant funds or initiate cooldown.
-     * @param amount Amount of base-equivalent value to withdraw
-     * @param outputToken Desired output token (determines withdraw type)
-     * @param beneficiary Address that will receive the withdrawn tokens
-     * @return result Struct describing the withdrawal outcome and any cooldown details
-     */
-    function withdraw(uint256 amount, address outputToken, address beneficiary) external returns (WithdrawResult memory result);
-
-    /**
-     * @notice Emergency withdrawal of all assets back to the CDO
-     * @dev Only callable by governance via PrimeCDO. Bypasses normal cooldown flow.
-     * @return amountOut Total base-equivalent amount recovered
-     */
-    function emergencyWithdraw() external returns (uint256 amountOut);
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  VIEW
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Total base-equivalent value of all assets held by this strategy
-     * @dev Used by Accounting to compute TVL changes and gain/loss.
-     * @return Total assets in base asset decimals
-     */
+    // @notice Total assets controlled, in base-asset units.
     function totalAssets() external view returns (uint256);
 
     /**
-     * @notice The base asset denomination for this strategy
-     * @return Address of the base asset token (e.g., USDe)
+     * @notice Convert `tokenAmount` of `token` into base-asset units
+     *         with the requested rounding direction.
      */
-    function baseAsset() external view returns (address);
+    function convertToAssets(
+        address token,
+        uint256 tokenAmount,
+        Math.Rounding rounding
+    ) external view returns (uint256 baseAssets);
 
-    /**
-     * @notice List of all tokens accepted for deposit
-     * @return Array of supported token addresses
-     */
-    function supportedTokens() external view returns (address[] memory);
+    // @notice Inverse of {convertToAssets}.
+    function convertToTokens(
+        address token,
+        uint256 baseAssets,
+        Math.Rounding rounding
+    ) external view returns (uint256 tokenAmount);
 
-    /**
-     * @notice Predict which withdrawal mechanism will be used for a given output token
-     * @dev Used by RedemptionPolicy to determine cooldown type before executing.
-     * @param outputToken The token the user wants to receive
-     * @return The WithdrawType that will be applied
-     */
-    function predictWithdrawType(address outputToken) external view returns (WithdrawType);
-
-    /**
-     * @notice List of cooldown handler contracts used by this strategy
-     * @return Array of ICooldownHandler addresses
-     */
-    function getCooldownHandlers() external view returns (address[] memory);
-
-    /**
-     * @notice Human-readable name of the strategy (e.g., "Ethena sUSDe")
-     * @return Strategy name string
-     */
-    function name() external view returns (string memory);
-
-    /**
-     * @notice Whether the strategy is currently active and accepting deposits
-     * @return true if active, false if paused or decommissioned
-     */
-    function isActive() external view returns (bool);
+    // @notice Tokens the strategy accepts on deposit.
+    function getSupportedTokens() external view returns (IERC20[] memory);
 }

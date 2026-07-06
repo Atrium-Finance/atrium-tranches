@@ -1,233 +1,170 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity 0.8.35;
 
-// ══════════════════════════════════════════════════════════════════════
-//  PRIMEVAULTS V3 — AprPairFeed
-//  Manages and provides APR pair (aaveBenchmarkAPR, strategyAPR) data.
-//  See: docs/PV_V3_APR_ORACLE.md section 3
-// ══════════════════════════════════════════════════════════════════════
-
-import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
-import { IAprPairFeed, IStrategyAprPairProvider } from "../interfaces/IAprPairFeed.sol";
+import { AccessControlled } from "../governance/AccessControlled.sol";
+import { IAprPairFeed } from "../interfaces/oracles/IAprPairFeed.sol";
+import { IStrategyAprProvider } from "../interfaces/oracles/IStrategyAprProvider.sol";
 
 /**
- * @title AprPairFeed
- * @notice Manages and provides APR pair (aaveBenchmarkAPR, strategyAPR) data.
- * @dev APR data has two sources:
- *      1. External (PUSH): APRs pushed directly by authorized observers (KEEPER_ROLE)
- *         - pushSeniorAprTarget(value, timestamp): override Senior aprTarget
- *         - pushAprBase(value, timestamp): override aprBase
- *         Each push writes a NEW round, carrying the other field forward from latest.
- *      2. Strategy (PULL): APRs fetched from on-chain provider (PrimeCDO auto-pulls on deposit/withdraw)
- *      The feed prefers PUSH/PULL cached data, but falls back to provider view if cache is stale.
- *      20-round circular buffer. Bounds [-50%, +200%]. int64 × 12 decimals.
+ * @title  AprPairFeed
+ * @notice `(aprBase, aprTarget)` oracle for Atrium Senior pricing.
+ *         Prefers fresh PUSH rounds; falls back to PULL from the
+ *         wired {IStrategyAprProvider} when stale.
  */
-contract AprPairFeed is IAprPairFeed, AccessControl {
-    // ═══════════════════════════════════════════════════════════════════
-    //  CONSTANTS
-    // ═══════════════════════════════════════════════════════════════════
+contract AprPairFeed is IAprPairFeed, AccessControlled {
+    /**
+     * @dev SD7x12 valid range — `[-50%, +200%]`. Matches the
+     *      Accounting feed normaliser bounds.
+     */
+    int64 private constant APR_MAX = 2e12;
+    int64 private constant APR_MIN = -0.5e12;
 
-    int64 private constant APR_BOUNDARY_MAX = 2e12; // 200%
-    int64 private constant APR_BOUNDARY_MIN = -0.5e12; // -50%
+    // @dev Clock-skew tolerance for future-dated PUSH timestamps.
     uint64 private constant MAX_FUTURE_DRIFT = 60;
-    uint8 public constant ROUNDS_CAP = 20;
-    uint8 public constant DECIMALS = 12;
 
-    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
+    // @notice SD7x12 encoding — 12 decimals.
+    uint8 public constant override decimals = 12;
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  STATE
-    // ═══════════════════════════════════════════════════════════════════
+    // @notice Historical rounds retained in the ring buffer.
+    uint8 public constant roundsCap = 20;
 
-    uint64 public s_currentRoundId;
-    uint64 public s_oldestRoundId;
-    TRound public s_latestRound;
-    mapping(uint256 => TRound) public s_rounds;
-    uint256 public s_roundStaleAfter;
-    IStrategyAprPairProvider public s_provider;
+    string public description;
+    uint64 public latestRoundId;
+    TRound public latestRound;
+    mapping(uint64 => TRound) public rounds;
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  EVENTS
-    // ═══════════════════════════════════════════════════════════════════
+    uint256 public roundStaleAfter;
+    IStrategyAprProvider public provider;
 
-    event RoundUpdated(uint64 roundId, int64 aprTargetSenior, int64 aprBase, uint64 updatedAt);
-    event SeniorAprTargetPushed(uint64 roundId, int64 value, uint64 updatedAt);
-    event AprBasePushed(uint64 roundId, int64 value, uint64 updatedAt);
-    event ProviderSet(address newProvider);
-    event StalePeriodSet(uint256 stalePeriod);
+    enum ESourcePref {
+        Feed,
+        Strategy
+    }
+    ESourcePref public sourcePref;
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  ERRORS
-    // ═══════════════════════════════════════════════════════════════════
+    event AnswerUpdated(int64 aprBase, int64 aprTarget, uint64 roundId, uint64 updatedAt);
+    event ProviderSet(address provider);
+    event StalePeriodSet(uint256 period);
+    event SourcePrefChanged(ESourcePref pref);
 
-    error PrimeVaults__StaleUpdate(uint64 timestamp);
-    error PrimeVaults__OutOfOrderUpdate(uint64 timestamp);
-    error PrimeVaults__InvalidApr(int64 value);
-    error PrimeVaults__RoundNotAvailable(uint64 roundId);
+    error StaleUpdate(int64 aprBase, uint64 timestamp);
+    error OutOfOrderUpdate(int64 aprBase, uint64 timestamp);
+    error InvalidApr(int64 apr);
+    error NoDataPresent();
+    error OldRound();
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  CONSTRUCTOR
-    // ═══════════════════════════════════════════════════════════════════
-
-    constructor(address admin_, IStrategyAprPairProvider provider_, uint256 roundStaleAfter_) {
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        s_provider = provider_;
-        s_roundStaleAfter = roundStaleAfter_;
+    // @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  READ — Accounting calls this
-    // ═══════════════════════════════════════════════════════════════════
+    function initialize(
+        address owner_,
+        address acm_,
+        IStrategyAprProvider provider_,
+        uint256 roundStaleAfter_,
+        string memory description_
+    ) external initializer {
+        AccessControlled_init(owner_, acm_);
+        provider = provider_;
+        roundStaleAfter = roundStaleAfter_;
+        description = description_;
+    }
 
-    /**
-     * @notice Get latest APR pair — cache if fresh, provider view if stale.
-     * @dev Fallback calls getAprPairView() (view, no state mutation).
-     */
+    // @inheritdoc IAprPairFeed
     function latestRoundData() external view override returns (TRound memory) {
-        TRound memory round = s_latestRound;
+        TRound memory round = latestRound;
 
-        if (round.updatedAt > 0) {
-            uint256 deltaT = block.timestamp - uint256(round.updatedAt);
-            if (deltaT < s_roundStaleAfter) {
+        if (sourcePref == ESourcePref.Feed && round.updatedAt != 0) {
+            // Guard against future-dated rounds (clock skew): a future
+            // round is by definition fresh, dt clamps to 0.
+            uint256 dt = block.timestamp > round.updatedAt ? block.timestamp - uint256(round.updatedAt) : 0;
+            if (dt < roundStaleAfter) {
                 return round;
             }
+            // fall through to PULL
         }
 
-        // Cache stale or empty → fallback to provider view
-        (int64 aprTarget, int64 aprBase, uint64 t1) = s_provider.getAprPairView();
-        _ensureValid(aprTarget);
+        (int64 aprBase, int64 aprTarget, uint64 t1) = provider.getApr();
         _ensureValid(aprBase);
-
-        return
-            TRound({
-                aprTargetSenior: aprTarget,
-                aprBase: aprBase,
-                updatedAt: t1,
-                answeredInRound: s_currentRoundId + 1
-            });
+        _ensureValid(aprTarget);
+        return TRound({ aprBase: aprBase, aprTarget: aprTarget, updatedAt: t1, answeredInRound: latestRoundId + 1 });
     }
 
-    /**
-     * @notice Get historical round by ID.
-     * @param roundId The round to retrieve
-     */
+    // @inheritdoc IAprPairFeed
     function getRoundData(uint64 roundId) external view override returns (TRound memory) {
-        if (roundId == 0 || roundId < s_oldestRoundId || roundId > s_currentRoundId) {
-            revert PrimeVaults__RoundNotAvailable(roundId);
+        uint64 idx = roundId % uint64(roundsCap);
+        TRound memory round = rounds[idx];
+        if (round.updatedAt == 0) revert NoDataPresent();
+        if (round.answeredInRound != roundId) revert OldRound();
+        return round;
+    }
+
+    // @inheritdoc IAprPairFeed
+    function updateRoundData(
+        int64 aprBase,
+        int64 aprTarget,
+        uint64 timestamp
+    ) external override onlyRole(UPDATER_FEED_ROLE) {
+        _updateRoundDataInner(aprBase, aprTarget, timestamp);
+        _setSourcePref(ESourcePref.Feed);
+    }
+
+    // @inheritdoc IAprPairFeed
+    function updateRoundData() external override onlyRole(UPDATER_FEED_ROLE) {
+        (int64 aprBase, int64 aprTarget, uint64 t) = provider.getApr();
+        _updateRoundDataInner(aprBase, aprTarget, t);
+        _setSourcePref(ESourcePref.Strategy);
+    }
+
+    function _updateRoundDataInner(int64 aprBase, int64 aprTarget, uint64 t) internal {
+        // Skip staleness check when chain time hasn't yet exceeded
+        // `roundStaleAfter` (test-chain / fresh-fork safety).
+        if (block.timestamp > roundStaleAfter && uint256(t) < block.timestamp - roundStaleAfter) {
+            revert StaleUpdate(aprBase, t);
         }
-        uint256 idx = (roundId - 1) % ROUNDS_CAP;
-        return s_rounds[idx];
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  UPDATE — PULL (from on-chain provider)
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Pull APR from provider — shifts snapshots + caches result.
-     * @dev Called by PrimeCDO on every deposit/withdraw (auto-pull), or by keeper.
-     *      Provider.getAprPair() is state-changing (shifts sUSDai rate snapshots).
-     */
-    function updateRoundData() external override onlyRole(KEEPER_ROLE) {
-        (int64 aprTarget, int64 aprBase, uint64 t) = s_provider.getAprPair();
-        _storeRound(aprTarget, aprBase, t);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  UPDATE — PUSH (from off-chain keeper)
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Push a new Senior aprTarget value.
-     * @dev Bypasses on-chain provider — useful when keeper computes the benchmark
-     *      off-chain. The aprBase is carried forward from the latest round.
-     *      Subject to same validation (_storeRound checks staleness, ordering, bounds).
-     * @param value New aprTarget in int64 × 12 decimals
-     * @param timestamp Unix timestamp of the observation
-     */
-    function pushSeniorAprTarget(int64 value, uint64 timestamp) external onlyRole(KEEPER_ROLE) {
-        TRound memory latest = s_latestRound;
-        _storeRound(value, latest.aprBase, timestamp);
-        emit SeniorAprTargetPushed(s_currentRoundId, value, timestamp);
-    }
-
-    /**
-     * @notice Push a new aprBase value (strategy APR). The Senior aprTarget is
-     *         carried forward from the latest round.
-     * @param value New aprBase in int64 × 12 decimals
-     * @param timestamp Unix timestamp of the observation
-     */
-    function pushAprBase(int64 value, uint64 timestamp) external onlyRole(KEEPER_ROLE) {
-        TRound memory latest = s_latestRound;
-        _storeRound(latest.aprTargetSenior, value, timestamp);
-        emit AprBasePushed(s_currentRoundId, value, timestamp);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  INTERNAL
-    // ═══════════════════════════════════════════════════════════════════
-
-    function _storeRound(int64 aprTargetSenior, int64 aprBase, uint64 t) internal {
-        if (uint256(t) < block.timestamp - s_roundStaleAfter) {
-            revert PrimeVaults__StaleUpdate(t);
+        if (t <= latestRound.updatedAt || uint256(t) > block.timestamp + MAX_FUTURE_DRIFT) {
+            revert OutOfOrderUpdate(aprBase, t);
         }
-        if (
-            s_latestRound.updatedAt > 0 &&
-            (t <= s_latestRound.updatedAt || uint256(t) > block.timestamp + MAX_FUTURE_DRIFT)
-        ) {
-            revert PrimeVaults__OutOfOrderUpdate(t);
-        }
-        _ensureValid(aprTargetSenior);
         _ensureValid(aprBase);
-
-        s_currentRoundId++;
-        uint256 idx = (s_currentRoundId - 1) % ROUNDS_CAP;
-
-        TRound memory round = TRound({
-            aprTargetSenior: aprTargetSenior,
-            aprBase: aprBase,
-            updatedAt: t,
-            answeredInRound: s_currentRoundId
-        });
-
-        s_latestRound = round;
-        s_rounds[idx] = round;
-
-        if (s_currentRoundId > uint64(ROUNDS_CAP)) {
-            s_oldestRoundId = s_currentRoundId - uint64(ROUNDS_CAP) + 1;
-        } else if (s_oldestRoundId == 0) {
-            s_oldestRoundId = 1;
-        }
-
-        emit RoundUpdated(s_currentRoundId, aprTargetSenior, aprBase, t);
-    }
-
-    function _ensureValid(int64 answer) internal pure {
-        if (answer < APR_BOUNDARY_MIN || answer > APR_BOUNDARY_MAX) {
-            revert PrimeVaults__InvalidApr(answer);
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  ADMIN
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Set a new provider. Calls getAprPairView() for compat check (view, no side effect).
-     */
-    function setProvider(IStrategyAprPairProvider provider_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        (int64 aprTarget, int64 aprBase, ) = provider_.getAprPairView();
         _ensureValid(aprTarget);
+
+        uint64 roundId = latestRoundId + 1;
+        uint64 idx = roundId % uint64(roundsCap);
+
+        latestRoundId = roundId;
+        latestRound = TRound({ aprBase: aprBase, aprTarget: aprTarget, updatedAt: t, answeredInRound: roundId });
+        rounds[idx] = latestRound;
+
+        emit AnswerUpdated(aprBase, aprTarget, roundId, t);
+    }
+
+    function _setSourcePref(ESourcePref pref) internal {
+        if (sourcePref != pref) {
+            sourcePref = pref;
+            emit SourcePrefChanged(pref);
+        }
+    }
+
+    function _ensureValid(int64 apr) internal pure {
+        if (apr < APR_MIN || apr > APR_MAX) revert InvalidApr(apr);
+    }
+
+    /**
+     * @notice Owner-only. Validates the provider via {getApr} before
+     *         registering — rejects misconfigured providers at the
+     *         registration moment, not at first read.
+     */
+    function setProvider(IStrategyAprProvider provider_) external onlyOwner {
+        (int64 aprBase, int64 aprTarget, ) = provider_.getApr();
         _ensureValid(aprBase);
-        s_provider = provider_;
+        _ensureValid(aprTarget);
+        provider = provider_;
         emit ProviderSet(address(provider_));
     }
 
-    /**
-     * @notice Update the staleness threshold.
-     */
-    function setRoundStaleAfter(uint256 roundStaleAfter_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        s_roundStaleAfter = roundStaleAfter_;
-        emit StalePeriodSet(roundStaleAfter_);
+    function setRoundStaleAfter(uint256 period) external onlyOwner {
+        roundStaleAfter = period;
+        emit StalePeriodSet(period);
     }
 }

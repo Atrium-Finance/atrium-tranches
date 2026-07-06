@@ -1,37 +1,19 @@
-# Node modules
-/node_modules
-
-# Compilation output
-/dist
-
-# pnpm deploy output
-/bundle
-
-# Hardhat Build Artifacts
-/artifacts
-
-# Hardhat compilation (v2) support directory
-/cache
-
-# Typechain output
-/types
-
-# Hardhat coverage reports
-/coverage
-
-# dotenv environment variables file
+node_modules
 .env
-.env.*
-!.env.example
+.env.local
 
-# Ignition build artifacts
-ignition/deployments/
+cache
+artifacts
+typechain-types
+ignition/deployments
 
+coverage/
+coverage.json
+.coverage_artifacts/
+.coverage_cache/
+.coverage_contracts/
 
-# Claude Code
-.claude/
-CLAUDE.md
+.DS_Store
+*.log
 
-# SDK lib build output
-lib/node_modules
-lib/dist
+.claude

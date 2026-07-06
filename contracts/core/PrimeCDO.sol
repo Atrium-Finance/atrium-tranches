@@ -1,531 +1,617 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
-
-// ══════════════════════════════════════════════════════════════════════
-//  PRIMEVAULTS V3 — PrimeCDO
-//  Core orchestrator for a PrimeVaults market (1 CDO = 1 Strategy)
-//  See: docs/PV_V3_FINAL_v34.md section 18
-// ══════════════════════════════════════════════════════════════════════
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity 0.8.35;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import { IPrimeCDO, TrancheId, CooldownType, CDOWithdrawResult } from "../interfaces/IPrimeCDO.sol";
-import { IAccounting } from "../interfaces/IAccounting.sol";
-import { IStrategy, WithdrawResult, WithdrawType } from "../interfaces/IStrategy.sol";
-import { ICooldownHandler, CooldownRequest } from "../interfaces/ICooldownHandler.sol";
-import { IAprPairFeed } from "../interfaces/IAprPairFeed.sol";
-import { RedemptionPolicy } from "../cooldown/RedemptionPolicy.sol";
+import { AccessControlled } from "../governance/AccessControlled.sol";
 
-/** @dev Minimal interface to burn shares on TrancheVault after SHARES_LOCK claim. */
-interface ITrancheVaultBurn {
-    function burnSharesFrom(address account, uint256 shares) external;
-}
+import { ICDO, TExitMode } from "../interfaces/ICDO.sol";
+import { ICDOComponent } from "../interfaces/ICDOComponent.sol";
+import { ITranche } from "../interfaces/ITranche.sol";
+import { IAccounting, TrancheKind } from "../interfaces/IAccounting.sol";
+import { IStrategy } from "../interfaces/IStrategy.sol";
+import { ISharesCooldown } from "../interfaces/cooldown/ISharesCooldown.sol";
 
 /**
- * @title PrimeCDO
- * @notice Core orchestrator connecting TrancheVaults to a single Strategy via Accounting.
- * @dev Handles deposit routing, coverage gates, and cooldown management.
- *      Two tranches (Senior + Junior), base-asset only. 1 CDO = 1 Strategy (Strata model).
- *      See docs/PV_V3_COVERAGE_GATE.md for coverage gate logic.
+ * @title  PrimeCDO
+ * @notice Primary CDO orchestrator. Owns component wiring, deposit
+ *         and withdraw routing, coverage gating, the silo glue, and
+ *         the treasury drain.
+ * @dev    Storage layout (own tail, append-only):
+ *         - `_jrVault`, `_mezzVault`, `_srVault`           (3 slots)
+ *         - `_accounting`, `_strategy`, `sharesCooldown`   (3 slots)
+ *         - `exitFeeJr`, `exitFeeMz`, `exitFeeSr`,
+ *           `treasury`                                     (4 slots)
+ *         - `actionsJr`, `actionsMezz`, `actionsSr`        (3 packed slots)
+ *         - `__gap[42]`                                    (42 reserved)
  */
-contract PrimeCDO is Ownable2Step, IPrimeCDO {
-    using SafeERC20 for IERC20;
+contract PrimeCDO is AccessControlled, ICDO {
+    // @notice Per-tranche enable flags. Both bools pack into one slot.
+    struct TActionState {
+        bool isDepositEnabled;
+        bool isWithdrawEnabled;
+    }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  CONSTANTS
-    // ═══════════════════════════════════════════════════════════════════
+    // @notice Minimum coverage ratio `pool / srNav`, 1e18. 5% buffer.
+    uint256 public constant MIN_COVERAGE = 1.05e18;
 
-    uint256 public constant PRECISION = 1e18;
+    // @notice Hard cap on per-tranche fallback exit fee, 1e18.
+    uint256 public constant MAX_EXIT_FEE = 0.1e18;
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  IMMUTABLES
-    // ═══════════════════════════════════════════════════════════════════
+    ITranche internal _jrVault;
+    ITranche internal _mezzVault;
+    ITranche internal _srVault;
 
-    IAccounting public immutable i_accounting;
-    IStrategy public immutable i_strategy;
-    IAprPairFeed public immutable i_aprFeed;
-    RedemptionPolicy public immutable i_redemptionPolicy;
-    ICooldownHandler public immutable i_erc20Cooldown;
-    ICooldownHandler public immutable i_sharesCooldown;
-    address public immutable i_outputToken;
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  STATE — Tranches
-    // ═══════════════════════════════════════════════════════════════════
-
-    mapping(TrancheId => address) public s_tranches;
-    mapping(address => TrancheId) public s_vaultToTranche;
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  STATE — Coverage Gate
-    // ═══════════════════════════════════════════════════════════════════
-
-    uint256 public s_minCoverageForDeposit; // 1.05e18
-    bool public s_shortfallPaused;
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  STATE — Emergency Guardian
-    // ═══════════════════════════════════════════════════════════════════
-
-    address public s_guardian;
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  STATE — SHARES_LOCK claim cap (audit M#1)
-    // ═══════════════════════════════════════════════════════════════════
+    IAccounting internal _accounting;
+    IStrategy internal _strategy;
 
     /**
-     * @notice Per-request snapshot of baseAmount at SHARES_LOCK request time.
-     * @dev Audit M#1 mitigation: caps claimSharesWithdraw at snapshot × (1 + s_maxClaimGrowthBps/10000)
-     *      to prevent attacker from inflating sUSDai rate before claim and extracting more than fair share.
-     *      Yield accrual during cooldown still allowed up to growth cap.
+     * @notice SharesCooldown silo. `address(0)` disables silo-aware
+     *         coverage.
      */
-    mapping(uint256 => uint256) public s_sharesLockBaseSnapshot;
+    address public override sharesCooldown;
 
-    /** @notice Max allowed growth between request-time snapshot and claim baseAmount, in BPS. Default 5000 = 50%. */
-    uint256 public s_maxClaimGrowthBps;
+    uint256 public override exitFeeJr;
+    uint256 public override exitFeeMz;
+    uint256 public override exitFeeSr;
 
-    /** @notice Hard cap on max growth setting (200% — beyond this, snapshot loses value). */
-    uint256 public constant MAX_CLAIM_GROWTH_BPS_LIMIT = 20_000;
+    // @notice Recipient wallet for reserve outflows.
+    address public override treasury;
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  EVENTS
-    // ═══════════════════════════════════════════════════════════════════
+    TActionState public actionsJr;
+    TActionState public actionsMezz;
+    TActionState public actionsSr;
 
-    event ShortfallUnpaused();
-    event TrancheRegistered(TrancheId indexed tranche, address vault);
-    event GuardianSet(address indexed guardian);
-    event EmergencyPauseTriggered(address indexed guardian);
+    event Configured(
+        address indexed jrVault,
+        address indexed mezzVault,
+        address indexed srVault,
+        address accounting,
+        address strategy
+    );
+    event DepositsStateChanged(address indexed tranche, bool enabled);
+    event WithdrawalsStateChanged(address indexed tranche, bool enabled);
+    event SharesCooldownChanged(address indexed sharesCooldown);
+    event ExitFeesSet(uint256 jr, uint256 mz, uint256 sr);
+    event TreasurySet(address treasury);
+    event ReserveReduced(address token, uint256 amount);
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  ERRORS
-    // ═══════════════════════════════════════════════════════════════════
+    error InvalidComponent(address component, address expectedCDO, address actualCDO);
+    error UnauthorizedTranche(address caller);
+    error TokenNotSupported(address token);
+    error InvalidTranche(address tranche);
+    error DepositsDisabled(address tranche);
+    error WithdrawalsDisabled(address tranche);
+    error CoverageBelowMinimum(uint256 current, uint256 postAction);
+    error SharesCooldownUnchanged();
+    error ZeroAmount();
+    error WithdrawalCapReached(address tranche);
+    error InvalidExitFee(uint256 value);
 
-    error PrimeVaults__Unauthorized(address caller);
-    error PrimeVaults__ShortfallPaused();
-    error PrimeVaults__CoverageTooLow(uint256 current, uint256 minimum);
-    error PrimeVaults__ZeroAmount();
-    error PrimeVaults__InvalidTrancheVault(address vault);
-    error PrimeVaults__GrowthCapTooHigh(uint256 bps);
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  MODIFIERS
-    // ═══════════════════════════════════════════════════════════════════
-
-    modifier onlyTranche(TrancheId id) {
-        if (msg.sender != s_tranches[id]) revert PrimeVaults__Unauthorized(msg.sender);
-        _;
-    }
-
-    modifier whenNotShortfallPaused() {
-        if (s_shortfallPaused) revert PrimeVaults__ShortfallPaused();
-        _;
-    }
-
-    modifier onlyOwnerOrGuardian() {
-        if (msg.sender != owner() && msg.sender != s_guardian) revert PrimeVaults__Unauthorized(msg.sender);
-        _;
-    }
-
-    modifier onlyGuardian() {
-        if (msg.sender != s_guardian) revert PrimeVaults__Unauthorized(msg.sender);
-        _;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  CONSTRUCTOR
-    // ═══════════════════════════════════════════════════════════════════
-
-    constructor(
-        address accounting_,
-        address strategy_,
-        address aprFeed_,
-        address redemptionPolicy_,
-        address erc20Cooldown_,
-        address sharesCooldown_,
-        address outputToken_,
-        address owner_
-    ) Ownable(owner_) {
-        i_accounting = IAccounting(accounting_);
-        i_strategy = IStrategy(strategy_);
-        i_aprFeed = IAprPairFeed(aprFeed_);
-        i_redemptionPolicy = RedemptionPolicy(redemptionPolicy_);
-        i_erc20Cooldown = ICooldownHandler(erc20Cooldown_);
-        i_sharesCooldown = ICooldownHandler(sharesCooldown_);
-        i_outputToken = outputToken_;
-
-        // Defaults
-        s_minCoverageForDeposit = 1.05e18; // 105%
-        s_maxClaimGrowthBps = 5_000; // audit M#1: 50% max growth between SHARES_LOCK request and claim
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  DEPOSIT — All tranches
-    // ═══════════════════════════════════════════════════════════════════
+    uint256[42] private __gap;
 
     /**
-     * @notice Deposit base asset into any tranche.
-     * @dev Coverage gate: reverts if coverage < 105% for Senior. Junior always allowed.
-     *      See docs/PV_V3_COVERAGE_GATE.md section 3.
+     * @notice Initialise the proxy. Components wired separately via
+     *         {config}.
      */
+    function initialize(address owner_, address acm_) external initializer {
+        AccessControlled_init(owner_, acm_);
+    }
+
+    modifier onlyTranche() {
+        if (msg.sender != address(_jrVault) && msg.sender != address(_mezzVault) && msg.sender != address(_srVault)) {
+            revert UnauthorizedTranche(msg.sender);
+        }
+        _;
+    }
+
+    /**
+     * @notice Atomically wire the five core components. Each must
+     *         report this CDO via {ICDOComponent.getCDOAddress};
+     *         re-callable to rewire.
+     */
+    function config(address jr, address mz, address sr, address accounting_, address strategy_) external onlyOwner {
+        _requireNonZero(jr);
+        _requireNonZero(mz);
+        _requireNonZero(sr);
+        _requireNonZero(accounting_);
+        _requireNonZero(strategy_);
+
+        _requireBackRef(jr);
+        _requireBackRef(mz);
+        _requireBackRef(sr);
+        _requireBackRef(accounting_);
+        _requireBackRef(strategy_);
+
+        _jrVault = ITranche(jr);
+        _mezzVault = ITranche(mz);
+        _srVault = ITranche(sr);
+        _accounting = IAccounting(accounting_);
+        _strategy = IStrategy(strategy_);
+
+        // `_strategy` must be set before `configure()` — Tranche reads
+        // `cdo.strategy()` inside its allowance-priming loop.
+        _jrVault.configure();
+        _mezzVault.configure();
+        _srVault.configure();
+
+        emit Configured(jr, mz, sr, accounting_, strategy_);
+    }
+
+    function jrVault() external view returns (ITranche) {
+        return _jrVault;
+    }
+
+    function mezzVault() external view returns (ITranche) {
+        return _mezzVault;
+    }
+
+    function srVault() external view returns (ITranche) {
+        return _srVault;
+    }
+
+    function strategy() external view returns (IStrategy) {
+        return _strategy;
+    }
+
+    function accounting() external view returns (IAccounting) {
+        return _accounting;
+    }
+
+    // @inheritdoc ICDO
+    function totalAssets(address tranche) external view returns (uint256) {
+        TrancheKind kind = _kindOf(tranche);
+        (uint256 jr, uint256 mz, uint256 sr,) = _accounting.totalAssetsT0();
+        if (kind == TrancheKind.JUNIOR) return jr;
+        if (kind == TrancheKind.MEZZANINE) return mz;
+        return sr;
+    }
+
+    // @inheritdoc ICDO
+    function kindOf(address tranche) external view returns (TrancheKind) {
+        return _kindOf(tranche);
+    }
+
+    // @inheritdoc ICDO
+    function updateAccounting() external onlyTranche {
+        _accounting.updateAccounting(_strategy.totalAssets());
+    }
+
+    // @inheritdoc ICDO
     function deposit(
-        TrancheId tranche,
+        address tranche,
         address token,
-        uint256 amount
-    ) external override onlyTranche(tranche) whenNotShortfallPaused returns (uint256 baseAmount) {
-        if (amount == 0) revert PrimeVaults__ZeroAmount();
+        uint256 tokenAmount,
+        uint256 baseAssets
+    ) external override onlyTranche nonReentrant {
+        tranche;
 
-        // 1. Update accounting
-        _updateAccounting();
+        _requireSupported(token);
 
-        // 2. Senior coverage gate (Junior always allowed — increases coverage)
-        if (tranche == TrancheId.SENIOR) {
-            uint256 coverage = _getCoverageSenior();
-            if (coverage < s_minCoverageForDeposit)
-                revert PrimeVaults__CoverageTooLow(coverage, s_minCoverageForDeposit);
+        if (!_actionsOf(msg.sender).isDepositEnabled) {
+            revert DepositsDisabled(msg.sender);
         }
 
-        // 3. Route tokens directly to strategy
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        IERC20(token).forceApprove(address(i_strategy), amount);
-        i_strategy.depositToken(token, amount);
+        if (_kindOf(msg.sender) == TrancheKind.SENIOR) {
+            // Coverage gate evaluated on accounting units, not raw tokens.
+            if (baseAssets > _maxSrDeposit()) {
+                revert CoverageBelowMinimum(_coverage(), _projectedCoverageAfterSrDeposit(baseAssets));
+            }
+        }
 
-        // 4. Convert to base-equivalent
-        //    If depositing sUSDai (yield-bearing), convert shares → assets via current exchange rate.
-        //    Otherwise (base asset USDai): 1:1.
-        if (token == i_outputToken) baseAmount = IERC4626(i_outputToken).convertToAssets(amount);
-        else baseAmount = amount;
+        // Pattern B/3: Strategy pulls directly from the calling Tranche.
+        _strategy.deposit(msg.sender, token, tokenAmount, baseAssets, msg.sender);
 
-        i_accounting.recordDeposit(tranche, baseAmount);
+        // Record the inflow so the tranche bucket and `nav` grow by the
+        // deposited principal. Without this the deposit surfaces as a
+        // positive strategy delta on the next updateAccounting and is
+        // mis-distributed as yield (reserve skim + cross-tranche split).
+        _recordDeposit(_kindOf(msg.sender), baseAssets);
     }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  VIEW — IPrimeCDO
-    // ═══════════════════════════════════════════════════════════════════
-
-    function accounting() external view override returns (address) {
-        return address(i_accounting);
-    }
-
-    function strategy() external view override returns (address) {
-        return address(i_strategy);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  WITHDRAW — All tranches
-    // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * @notice Request withdrawal from any tranche.
-     * @dev Flow: update accounting → re-quote baseAmount from current state →
-     *      compute fee → route to mechanism. Mechanism selected by RedemptionPolicy
-     *      based on per-tranche coverage.
-     *
-     *      Audit fix (H#1): the `baseAmount` argument is treated as a UI hint only.
-     *      After `_updateAccounting()` may apply a loss waterfall (concurrent sUSDai
-     *      depreciation, accumulated drift, etc.) the tranche TVL can drop below the
-     *      caller's quote. We therefore re-quote `baseAmount` from `vaultShares` and
-     *      the post-update TVL/totalSupply, ensuring the user redeems their fair
-     *      share of the tranche after any in-call loss is applied.
-     * @param tranche Target tranche.
-     * @param baseAmount Caller-quoted base amount (advisory only, recomputed below).
-     * @param beneficiary Receiver of withdrawn output token.
-     * @param vaultShares Vault shares being redeemed — authoritative input for sizing.
+     * @inheritdoc ICDO
+     * @dev    `owner_ == sharesCooldown` flips `isSharesLockup = true` —
+     *         the silo is finalising and the user already served the
+     *         lock there, so Strategy's own cooldown is skipped.
      */
-    function requestWithdraw(
-        TrancheId tranche,
-        uint256 baseAmount,
-        address beneficiary,
-        uint256 vaultShares
-    ) external override onlyTranche(tranche) whenNotShortfallPaused returns (CDOWithdrawResult memory result) {
-        if (vaultShares == 0) revert PrimeVaults__ZeroAmount();
-        _updateAccounting();
+    function withdraw(
+        address tranche,
+        address token,
+        uint256 tokenAmount,
+        uint256 baseAssets,
+        address owner_,
+        address receiver
+    ) external override onlyTranche nonReentrant {
+        tranche;
+        if (tokenAmount == 0 || baseAssets == 0) revert ZeroAmount();
 
-        // Re-quote baseAmount from post-update state to prevent stale-quote race.
-        // See audit finding H#1.
-        baseAmount = _quoteBaseAmount(tranche, vaultShares);
-        if (baseAmount == 0) revert PrimeVaults__ZeroAmount();
+        if (!_actionsOf(msg.sender).isWithdrawEnabled) {
+            revert WithdrawalsDisabled(msg.sender);
+        }
 
-        // Fee from RedemptionPolicy
-        RedemptionPolicy.PolicyResult memory policy = i_redemptionPolicy.evaluate(tranche);
-        uint256 feeAmount = (baseAmount * policy.feeBps) / 10_000;
-        uint256 netAmount = baseAmount - feeAmount;
-        if (feeAmount > 0) i_accounting.recordFee(tranche, feeAmount);
+        TrancheKind kind = _kindOf(msg.sender);
+        if (kind != TrancheKind.SENIOR) {
+            if (baseAssets > _maxWithdraw(msg.sender)) {
+                revert CoverageBelowMinimum(_coverage(), _projectedCoverageAfterSubWithdraw(baseAssets));
+            }
+        }
 
-        // Route to mechanism (duration from RedemptionPolicy — single source of truth)
-        if (policy.mechanism == RedemptionPolicy.CooldownMechanism.NONE) {
-            result = _withdrawInstant(tranche, netAmount, beneficiary, feeAmount);
-        } else if (policy.mechanism == RedemptionPolicy.CooldownMechanism.ASSETS_LOCK) {
-            result = _withdrawAssetsLock(tranche, netAmount, beneficiary, feeAmount, policy.cooldownDuration);
+        bool isSharesLockup = owner_ == sharesCooldown && sharesCooldown != address(0);
+
+        _strategy.withdraw(msg.sender, token, tokenAmount, baseAssets, owner_, receiver, isSharesLockup);
+
+        _recordWithdraw(kind, baseAssets);
+    }
+
+    // @inheritdoc ICDO
+    function calculateExitMode(
+        address tranche,
+        address owner
+    ) external view override returns (TExitMode mode, uint256 fee, uint32 cooldownSeconds) {
+        address silo = sharesCooldown;
+        if (silo != address(0)) {
+            // Silo-as-owner short-circuits so finalisation doesn't re-lock.
+            if (owner == silo) {
+                return (TExitMode.ERC4626, 0, 0);
+            }
+
+            uint256 cov = _coverage();
+            ISharesCooldown.TExitParams memory exit = ISharesCooldown(silo).calculateExitParams(tranche, cov);
+
+            fee = exit.feeBps;
+
+            if (exit.sharesLock > 0) {
+                return (TExitMode.SharesLock, fee, exit.sharesLock);
+            }
+        }
+
+        if (fee == 0) {
+            TrancheKind kind = _kindOf(tranche);
+            if (kind == TrancheKind.JUNIOR) {
+                fee = exitFeeJr;
+            } else if (kind == TrancheKind.MEZZANINE) {
+                fee = exitFeeMz;
+            } else {
+                fee = exitFeeSr;
+            }
+        }
+
+        return (TExitMode.Fee, fee, 0);
+    }
+
+    /**
+     * @inheritdoc ICDO
+     * @dev    No coverage gate: low coverage already routes through the
+     *         silo's harshest range — a second hard gate would block
+     *         users from the throttle that exists for that case.
+     */
+    function cooldownShares(
+        address tranche,
+        address token,
+        uint256 shares,
+        address sender,
+        address receiver,
+        uint256 fee,
+        uint32 cooldownSeconds
+    ) external override onlyTranche nonReentrant {
+        if (shares == 0) revert ZeroAmount();
+        if (!_actionsOf(msg.sender).isWithdrawEnabled) revert WithdrawalsDisabled(msg.sender);
+        if (sharesCooldown == address(0)) revert SharesCooldownUnchanged();
+
+        ISharesCooldown(sharesCooldown).requestRedeem(
+            ITranche(tranche),
+            token,
+            sender,
+            receiver,
+            shares,
+            fee,
+            cooldownSeconds
+        );
+    }
+
+    // @inheritdoc ICDO
+    function accrueFee(address tranche, uint256 assets) external override onlyTranche {
+        _accounting.accrueFee(tranche, assets);
+    }
+
+    // @inheritdoc ICDO
+    function updateBalanceFlow() external override onlyTranche {
+        _accounting.updateBalanceFlow();
+    }
+
+    // @inheritdoc ICDO
+    function updateBalanceFlow(
+        uint256 jrIn,
+        uint256 jrOut,
+        uint256 mzIn,
+        uint256 mzOut,
+        uint256 srIn,
+        uint256 srOut
+    ) external override onlyTranche {
+        _accounting.updateBalanceFlow(jrIn, jrOut, mzIn, mzOut, srIn, srOut);
+    }
+
+    // @inheritdoc ICDO
+    function setExitFees(uint256 jr, uint256 mz, uint256 sr) external override onlyOwner {
+        if (jr > MAX_EXIT_FEE) revert InvalidExitFee(jr);
+        if (mz > MAX_EXIT_FEE) revert InvalidExitFee(mz);
+        if (sr > MAX_EXIT_FEE) revert InvalidExitFee(sr);
+        exitFeeJr = jr;
+        exitFeeMz = mz;
+        exitFeeSr = sr;
+        emit ExitFeesSet(jr, mz, sr);
+    }
+
+    // @inheritdoc ICDO
+    function setReserveTreasury(address treasury_) external override onlyOwner {
+        if (treasury_ == address(0)) revert ZeroAddress();
+        treasury = treasury_;
+        emit TreasurySet(treasury_);
+    }
+
+    /**
+     * @inheritdoc ICDO
+     * @dev    `Math.Rounding.Floor` favours protocol on the
+     *         `tokenAmount → baseAssets` conversion: the reserve
+     *         bucket is debited slightly less than the strict
+     *         equivalent so rounding alone never overdrives it.
+     */
+    function reduceReserve(address token, uint256 amount) external override onlyRole(RESERVE_MANAGER_ROLE) {
+        if (treasury == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+
+        uint256 baseAssets = _strategy.convertToAssets(token, amount, Math.Rounding.Floor);
+
+        _accounting.reduceReserve(baseAssets);
+
+        _strategy.reduceReserve(token, amount, treasury);
+
+        emit ReserveReduced(token, amount);
+    }
+
+    function _recordDeposit(TrancheKind kind, uint256 baseAssets) internal {
+        uint256 jrIn = kind == TrancheKind.JUNIOR ? baseAssets : 0;
+        uint256 mzIn = kind == TrancheKind.MEZZANINE ? baseAssets : 0;
+        uint256 srIn = kind == TrancheKind.SENIOR ? baseAssets : 0;
+        _accounting.updateBalanceFlow(jrIn, 0, mzIn, 0, srIn, 0);
+    }
+
+    function _recordWithdraw(TrancheKind kind, uint256 baseAssets) internal {
+        uint256 jrOut = kind == TrancheKind.JUNIOR ? baseAssets : 0;
+        uint256 mzOut = kind == TrancheKind.MEZZANINE ? baseAssets : 0;
+        uint256 srOut = kind == TrancheKind.SENIOR ? baseAssets : 0;
+        _accounting.updateBalanceFlow(0, jrOut, 0, mzOut, 0, srOut);
+    }
+
+    // @inheritdoc ICDO
+    function maxWithdraw(address tranche) external view returns (uint256) {
+        return _maxWithdraw(tranche);
+    }
+
+    // @inheritdoc ICDO
+    function maxWithdraw(address tranche, address owner) external view returns (uint256) {
+        if (sharesCooldown != address(0) && owner == sharesCooldown) {
+            return _maxWithdrawForSilo(tranche);
+        }
+        return _maxWithdraw(tranche);
+    }
+
+    function _maxWithdrawForSilo(address tranche) internal view returns (uint256) {
+        address silo = sharesCooldown;
+        TrancheKind kind = _kindOf(tranche);
+
+        uint256 siloShares;
+        uint256 siloAssets;
+        if (kind == TrancheKind.JUNIOR) {
+            siloShares = _jrVault.balanceOf(silo);
+            siloAssets = _jrVault.convertToAssets(siloShares);
+        } else if (kind == TrancheKind.MEZZANINE) {
+            siloShares = _mezzVault.balanceOf(silo);
+            siloAssets = _mezzVault.convertToAssets(siloShares);
         } else {
-            // Pass netAmount as the snapshot baseline — capped on claim by s_maxClaimGrowthBps (audit M#1).
-            result = _withdrawSharesLock(tranche, beneficiary, vaultShares, netAmount, feeAmount, policy.cooldownDuration);
+            siloShares = _srVault.balanceOf(silo);
+            siloAssets = _srVault.convertToAssets(siloShares);
+        }
+
+        return siloAssets;
+    }
+
+    // @inheritdoc ICDO
+    function maxDeposit(address tranche) external view returns (uint256) {
+        TrancheKind kind = _kindOf(tranche);
+        if (kind != TrancheKind.SENIOR) {
+            return type(uint256).max;
+        }
+        return _maxSrDeposit();
+    }
+
+    // @inheritdoc ICDO
+    function coverage() external view override returns (uint256) {
+        return _coverage();
+    }
+
+    // @inheritdoc ICDO
+    function totalAssetsUnlocked() external view override returns (uint256 jr, uint256 mz, uint256 sr) {
+        return _totalAssetsUnlocked();
+    }
+
+    // @inheritdoc ICDO
+    function setSharesCooldown(address sharesCooldown_) external override onlyOwner {
+        if (sharesCooldown_ == sharesCooldown) {
+            revert SharesCooldownUnchanged();
+        }
+        sharesCooldown = sharesCooldown_;
+        emit SharesCooldownChanged(sharesCooldown_);
+    }
+
+    /**
+     * @notice Set deposit/withdraw enable flags for a tranche.
+     * @dev    `tranche == address(0)` fans out to all three vaults.
+     *         Idempotent — unchanged flags emit no event.
+     */
+    function setActionStates(
+        address tranche,
+        bool isDepositEnabled,
+        bool isWithdrawEnabled
+    ) external onlyRole(PAUSER_ROLE) {
+        if (tranche == address(0)) {
+            _setActionStatesInner(address(_jrVault), isDepositEnabled, isWithdrawEnabled);
+            _setActionStatesInner(address(_mezzVault), isDepositEnabled, isWithdrawEnabled);
+            _setActionStatesInner(address(_srVault), isDepositEnabled, isWithdrawEnabled);
+            return;
+        }
+        _setActionStatesInner(tranche, isDepositEnabled, isWithdrawEnabled);
+    }
+
+    function _setActionStatesInner(address tranche, bool isDepositEnabled, bool isWithdrawEnabled) internal {
+        TActionState storage state = _actionsOf(tranche);
+
+        if (state.isDepositEnabled != isDepositEnabled) {
+            state.isDepositEnabled = isDepositEnabled;
+            emit DepositsStateChanged(tranche, isDepositEnabled);
+        }
+
+        if (state.isWithdrawEnabled != isWithdrawEnabled) {
+            state.isWithdrawEnabled = isWithdrawEnabled;
+            emit WithdrawalsStateChanged(tranche, isWithdrawEnabled);
         }
     }
 
-    /**
-     * @dev NONE mechanism: withdraw from strategy directly to beneficiary.
-     *      Always withdraws sUSDai (i_outputToken) — instant transfer from strategy.
-     */
-    function _withdrawInstant(
-        TrancheId tranche,
-        uint256 netAmount,
-        address beneficiary,
-        uint256 feeAmount
-    ) internal returns (CDOWithdrawResult memory) {
-        WithdrawResult memory wr = i_strategy.withdraw(netAmount, i_outputToken, beneficiary);
-        i_accounting.recordWithdraw(tranche, netAmount);
-
-        return
-            CDOWithdrawResult({
-                isInstant: true,
-                amountOut: wr.amountOut,
-                cooldownId: 0,
-                cooldownHandler: address(0),
-                unlockTime: 0,
-                feeAmount: feeAmount,
-                appliedCooldownType: CooldownType.NONE
-            });
+    function _kindOf(address tranche) internal view returns (TrancheKind) {
+        if (tranche == address(_jrVault)) return TrancheKind.JUNIOR;
+        if (tranche == address(_mezzVault)) return TrancheKind.MEZZANINE;
+        if (tranche == address(_srVault)) return TrancheKind.SENIOR;
+        revert InvalidTranche(tranche);
     }
 
-    /**
-     * @dev ASSETS_LOCK mechanism: withdraw sUSDai from strategy to CDO, then lock in ERC20Cooldown.
-     *      Always uses i_outputToken (sUSDai) — strategy returns INSTANT.
-     */
-    function _withdrawAssetsLock(
-        TrancheId tranche,
-        uint256 netAmount,
-        address beneficiary,
-        uint256 feeAmount,
-        uint256 cooldownDuration
-    ) internal returns (CDOWithdrawResult memory) {
-        // Withdraw sUSDai to CDO (not beneficiary) so we can lock in cooldown
-        WithdrawResult memory wr = i_strategy.withdraw(netAmount, i_outputToken, address(this));
-        i_accounting.recordWithdraw(tranche, netAmount);
-
-        // Strategy returned sUSDai to CDO → lock in ERC20Cooldown
-        IERC20(i_outputToken).forceApprove(address(i_erc20Cooldown), wr.amountOut);
-        uint256 requestId = i_erc20Cooldown.request(beneficiary, i_outputToken, wr.amountOut, cooldownDuration);
-
-        return
-            CDOWithdrawResult({
-                isInstant: false,
-                amountOut: 0,
-                cooldownId: requestId,
-                cooldownHandler: address(i_erc20Cooldown),
-                unlockTime: 0,
-                feeAmount: feeAmount,
-                appliedCooldownType: CooldownType.ASSETS_LOCK
-            });
+    function _actionsOf(address tranche) internal view returns (TActionState storage) {
+        TrancheKind kind = _kindOf(tranche);
+        if (kind == TrancheKind.JUNIOR) return actionsJr;
+        if (kind == TrancheKind.MEZZANINE) return actionsMezz;
+        return actionsSr;
     }
 
-    /**
-     * @dev SHARES_LOCK mechanism: escrow vault shares in SharesCooldown.
-     *      Strategy NOT touched — shares stay in totalSupply → TVL preserved → coverage stable.
-     *      At claim via claimSharesWithdraw(): shares return to CDO, converted at current rate.
-     */
-    function _withdrawSharesLock(
-        TrancheId tranche,
-        address beneficiary,
-        uint256 vaultShares,
-        uint256 baseAmountSnapshot,
-        uint256 feeAmount,
-        uint256 cooldownDuration
-    ) internal returns (CDOWithdrawResult memory) {
-        address vault = s_tranches[tranche];
-        IERC20(vault).safeTransferFrom(msg.sender, address(this), vaultShares);
-        IERC20(vault).forceApprove(address(i_sharesCooldown), vaultShares);
-        uint256 requestId = i_sharesCooldown.request(beneficiary, vault, vaultShares, cooldownDuration);
-
-        // Audit M#1 fix: snapshot the base amount at request time. claimSharesWithdraw()
-        // caps the claim at snapshot × (1 + s_maxClaimGrowthBps/10000) to defeat rate-pump.
-        s_sharesLockBaseSnapshot[requestId] = baseAmountSnapshot;
-
-        // Do NOT recordWithdraw — shares still in totalSupply, TVL unchanged
-        return
-            CDOWithdrawResult({
-                isInstant: false,
-                amountOut: 0,
-                cooldownId: requestId,
-                cooldownHandler: address(i_sharesCooldown),
-                unlockTime: 0,
-                feeAmount: feeAmount,
-                appliedCooldownType: CooldownType.SHARES_LOCK
-            });
+    function _requireNonZero(address a) internal pure {
+        if (a == address(0)) revert ZeroAddress();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  CLAIM
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Claim a completed ERC20Cooldown (ASSETS_LOCK) withdrawal.
-     * @dev Delegates to a whitelisted cooldown handler. Callable by anyone.
-     *      Tokens are released directly from the cooldown handler to the beneficiary.
-     */
-    function claimWithdraw(uint256 cooldownId, address cooldownHandler) external override returns (uint256 amountOut) {
-        if (cooldownHandler != address(i_erc20Cooldown)) revert PrimeVaults__Unauthorized(cooldownHandler);
-        amountOut = ICooldownHandler(cooldownHandler).claim(cooldownId);
-    }
-
-    /**
-     * @notice Claim a completed SharesCooldown (SHARES_LOCK) withdrawal.
-     * @dev Flow: claim shares from SharesCooldown → CDO receives vault shares →
-     *      compute base value at current exchange rate → withdraw from strategy → send to beneficiary.
-     *      User benefits from yield accrued during cooldown (shares appreciated).
-     *      Callable by anyone.
-     */
-    function claimSharesWithdraw(uint256 cooldownId) external override returns (uint256 amountOut) {
-        // 1. Claim shares from SharesCooldown → shares come back to this CDO
-        CooldownRequest memory req = i_sharesCooldown.getRequest(cooldownId);
-        uint256 sharesReturned = i_sharesCooldown.claim(cooldownId);
-
-        // 2. Determine tranche from the vault token stored in the request
-        address vault = req.token;
-        TrancheId tranche = s_vaultToTranche[vault];
-
-        // Audit M#2 fix: round-trip check prevents unregistered/legacy vault → SENIOR drain
-        // (default-zero TrancheId would otherwise route arbitrary req.token to SENIOR).
-        if (vault == address(0) || s_tranches[tranche] != vault) {
-            revert PrimeVaults__InvalidTrancheVault(vault);
+    function _requireBackRef(address component) internal view {
+        address actual = ICDOComponent(component).getCDOAddress();
+        if (actual != address(this)) {
+            revert InvalidComponent(component, address(this), actual);
         }
+    }
 
-        _updateAccounting();
-        uint256 totalSupply = IERC20(vault).totalSupply();
-
-        // 3. Compute base value of shares at current exchange rate
-        uint256 baseTVL = i_accounting.getTrancheTVL(tranche);
-        uint256 baseAmount = totalSupply > 0 ? (sharesReturned * baseTVL) / totalSupply : 0;
-
-        // Audit M#1 fix (claim-side): cap baseAmount at request-time snapshot × growth factor
-        // to defeat sUSDai rate-pump exploit. Yield accrued during cooldown still allowed up
-        // to s_maxClaimGrowthBps; anything above is treated as manipulation and clamped.
-        uint256 snapshot = s_sharesLockBaseSnapshot[cooldownId];
-        if (snapshot > 0) {
-            uint256 maxAllowed = snapshot + (snapshot * s_maxClaimGrowthBps) / 10_000;
-            if (baseAmount > maxAllowed) baseAmount = maxAllowed;
-            delete s_sharesLockBaseSnapshot[cooldownId];
+    function _requireSupported(address token) internal view {
+        IERC20[] memory tokens = _strategy.getSupportedTokens();
+        uint256 len = tokens.length;
+        for (uint256 i; i < len; ) {
+            if (address(tokens[i]) == token) return;
+            unchecked {
+                ++i;
+            }
         }
-
-        // 4. Record withdraw and withdraw from strategy to beneficiary
-        i_accounting.recordWithdraw(tranche, baseAmount);
-        WithdrawResult memory wr = i_strategy.withdraw(baseAmount, i_outputToken, req.beneficiary);
-        amountOut = wr.amountOut;
-
-        // 5. Burn the returned shares (were escrowed, not burned at request time)
-        ITrancheVaultBurn(vault).burnSharesFrom(address(this), sharesReturned);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  ADMIN
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Register / rotate the vault for a tranche.
-     * @dev Audit M#3 fix: clear the reverse mapping for the previous vault on rotation
-     *      so stale `s_vaultToTranche[oldVault]` cannot route claims against the new
-     *      tranche's TVL.
-     */
-    function registerTranche(TrancheId id, address vault) external onlyOwner {
-        address oldVault = s_tranches[id];
-        if (oldVault != address(0) && oldVault != vault) {
-            delete s_vaultToTranche[oldVault];
-        }
-        s_tranches[id] = vault;
-        s_vaultToTranche[vault] = id;
-        emit TrancheRegistered(id, vault);
-    }
-
-    function setMinCoverageForDeposit(uint256 minCoverage) external onlyOwner {
-        s_minCoverageForDeposit = minCoverage;
+        revert TokenNotSupported(token);
     }
 
     /**
-     * @notice Update the SHARES_LOCK claim growth cap.
-     * @dev Audit M#1: caps claim baseAmount at request-time snapshot × (1 + bps/10000).
-     *      Higher = more permissive (more rate-pump risk); lower = stricter (may clip legitimate yield).
-     *      Bounded by MAX_CLAIM_GROWTH_BPS_LIMIT to keep snapshot meaningful.
+     * @dev coverage = (jr + mz + sr) × 1e18 / sr.  Sentinel
+     *      `type(uint256).max` when sr = 0 so gate comparisons trivially
+     *      pass (the protocol is effectively over-collateralised).
      */
-    function setMaxClaimGrowthBps(uint256 bps) external onlyOwner {
-        if (bps > MAX_CLAIM_GROWTH_BPS_LIMIT) revert PrimeVaults__GrowthCapTooHigh(bps);
-        s_maxClaimGrowthBps = bps;
-    }
-
-    function unpauseShortfall() external onlyOwnerOrGuardian {
-        s_shortfallPaused = false;
-        emit ShortfallUnpaused();
-    }
-
-    /**
-     * @notice Manually trigger emergency pause. Only callable by guardian.
-     * @dev Bypasses the automatic junior price-based trigger for emergency situations.
-     */
-    function triggerShortfallPause() external onlyGuardian {
-        s_shortfallPaused = true;
-        emit EmergencyPauseTriggered(msg.sender);
-    }
-
-    /**
-     * @notice Set the emergency guardian address. Only callable by owner.
-     * @param guardian_ New guardian address (zero address disables guardian)
-     */
-    function setGuardian(address guardian_) external onlyOwner {
-        s_guardian = guardian_;
-        emit GuardianSet(guardian_);
-    }
-
-    /**
-     * @notice Claim accumulated reserve (fees + gain cuts) to a recipient.
-     * @dev Withdraws reserve amount from strategy as sUSDai → transfers to recipient.
-     * @param recipient Address that will receive the sUSDai
-     * @return amountOut sUSDai amount sent to recipient
-     */
-    function claimReserve(address recipient) external onlyOwner returns (uint256 amountOut) {
-        if (recipient == address(0)) revert PrimeVaults__ZeroAmount();
-        uint256 reserveAmount = i_accounting.claimReserve();
-        if (reserveAmount == 0) return 0;
-        WithdrawResult memory wr = i_strategy.withdraw(reserveAmount, i_outputToken, recipient);
-        amountOut = wr.amountOut;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  INTERNAL
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * @dev Sync APR feed and Accounting with current strategy state.
-     *      Pushes fresh APR data on every deposit/withdraw — no keeper dependency.
-     */
-    function _updateAccounting() internal {
-        uint256 strategyTVL = i_strategy.totalAssets();
-        i_accounting.updateTVL(strategyTVL);
-    }
-
-    /**
-     * @dev Senior coverage: cs = (Sr + Jr) / Sr.
-     *      If Sr=0: empty protocol → max (allow first deposit).
-     */
-    function _getCoverageSenior() internal view returns (uint256) {
-        (uint256 sr, uint256 jr) = i_accounting.getAllTVLs();
+    function _coverage() internal view returns (uint256) {
+        (uint256 jr, uint256 mz, uint256 sr) = _totalAssetsUnlocked();
         if (sr == 0) return type(uint256).max;
-        return ((sr + jr) * PRECISION) / sr;
+        uint256 pool = jr + mz + sr;
+        return (pool * 1e18) / sr;
+    }
+
+    function _tvls() internal view returns (uint256 jr, uint256 mz, uint256 sr) {
+        return _totalAssetsUnlocked();
     }
 
     /**
-     * @dev Re-quote baseAmount from current tranche TVL and vault totalSupply.
-     *      Audit fix H#1: prevents stale-quote race across in-call loss waterfall.
-     *      Full drain (vaultShares == vaultSupply) returns the full tranche TVL to
-     *      avoid leaving dust; partial redeems pro-rate the share count.
+     * @dev Subtract silo-held assets so locked shares don't inflate
+     *      Sr (which would tighten the gate against users) or subordinate
+     *      (which would loosen it). Saturating to zero protects against
+     *      arithmetic drift between the tranche book and the snapshot.
      */
-    function _quoteBaseAmount(TrancheId tranche, uint256 vaultShares) internal view returns (uint256) {
-        address vault = s_tranches[tranche];
-        uint256 vaultSupply = IERC20(vault).totalSupply();
-        if (vaultSupply == 0) return 0;
-        uint256 freshTVL = i_accounting.getTrancheTVL(tranche);
-        if (vaultShares >= vaultSupply) return freshTVL;
-        return (vaultShares * freshTVL) / vaultSupply;
+    function _totalAssetsUnlocked() internal view returns (uint256 jr, uint256 mz, uint256 sr) {
+        (jr, mz, sr, ) = _accounting.totalAssetsT0();
+        address silo = sharesCooldown;
+        if (silo == address(0)) {
+            return (jr, mz, sr);
+        }
+        uint256 jrLocked = _jrVault.convertToAssets(_jrVault.balanceOf(silo));
+        uint256 mzLocked = _mezzVault.convertToAssets(_mezzVault.balanceOf(silo));
+        uint256 srLocked = _srVault.convertToAssets(_srVault.balanceOf(silo));
+        jr = jr > jrLocked ? jr - jrLocked : 0;
+        mz = mz > mzLocked ? mz - mzLocked : 0;
+        sr = sr > srLocked ? sr - srLocked : 0;
     }
 
+    /**
+     * @dev Max additional Sr deposit keeping `(pool+x) / (sr+x) >= MIN_COVERAGE`.
+     *      Solving for x:
+     *        x  =  (subordinate - sr × (MIN_COVERAGE - 1)) / (MIN_COVERAGE - 1)
+     *      where subordinate = jr + mz. With MIN_COVERAGE = 1.05e18 the
+     *      divisor is 0.05e18, so headroom amplifies by 20×. Returns 0
+     *      when coverage is already at or below the floor.
+     */
+    function _maxSrDeposit() internal view returns (uint256) {
+        (uint256 jr, uint256 mz, uint256 sr) = _tvls();
+        uint256 srFloor = (sr * (MIN_COVERAGE - 1e18)) / 1e18;
+        uint256 subordinate = jr + mz;
+        if (subordinate <= srFloor) {
+            return 0;
+        }
+        uint256 headroom = subordinate - srFloor;
+        return (headroom * 1e18) / (MIN_COVERAGE - 1e18);
+    }
+
+    /**
+     * @dev Senior is unrestricted (withdrawing Sr raises coverage).
+     *      Jr/Mz share a single buffer:
+     *        maxOut  =  (jr + mz) - sr × (MIN_COVERAGE - 1) / 1e18
+     *      First-come-first-served on actual withdrawal.
+     */
+    function _maxWithdraw(address tranche) internal view returns (uint256) {
+        TrancheKind kind = _kindOf(tranche);
+        (uint256 jr, uint256 mz, uint256 sr) = _tvls();
+
+        if (kind == TrancheKind.SENIOR) {
+            return sr;
+        }
+
+        uint256 srFloor = (sr * (MIN_COVERAGE - 1e18)) / 1e18;
+        uint256 subordinate = jr + mz;
+        if (subordinate <= srFloor) {
+            return 0;
+        }
+        return subordinate - srFloor;
+    }
+
+    // @dev coverageAfter = (pool + amount) × 1e18 / (sr + amount).
+    function _projectedCoverageAfterSrDeposit(uint256 amount) internal view returns (uint256) {
+        (uint256 jr, uint256 mz, uint256 sr) = _tvls();
+        uint256 newSr = sr + amount;
+        uint256 newPool = jr + mz + newSr;
+        if (newSr == 0) return type(uint256).max;
+        return (newPool * 1e18) / newSr;
+    }
+
+    /**
+     * @dev coverageAfter = (pool - amount) × 1e18 / sr.  Saturating
+     *      subtraction so a violating amount still produces a comparable
+     *      ratio for the revert payload.
+     */
+    function _projectedCoverageAfterSubWithdraw(uint256 amount) internal view returns (uint256) {
+        (uint256 jr, uint256 mz, uint256 sr) = _tvls();
+        if (sr == 0) return type(uint256).max;
+        uint256 pool = jr + mz + sr;
+        uint256 newPool = pool > amount ? pool - amount : 0;
+        return (newPool * 1e18) / sr;
+    }
 }

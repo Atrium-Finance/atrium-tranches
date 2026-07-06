@@ -1,119 +1,146 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity 0.8.35;
 
-// ══════════════════════════════════════════════════════════════════════
-//  PRIMEVAULTS V3 — IAccounting
-//  TVL tracking, gain splitting, and loss waterfall interface
-//  See: docs/PV_V3_FINAL_v34.md section 17
-// ══════════════════════════════════════════════════════════════════════
+import { UD60x18 } from "@prb/math/src/ud60x18/ValueType.sol";
 
-import {TrancheId} from "./IPrimeCDO.sol";
+import { IAPRFeed } from "./IAPRFeed.sol";
 
 /**
- * @title IAccounting
- * @notice Interface for the Accounting contract
- * @dev Tracks per-tranche TVL (Senior, Junior).
- *      Splits gains: Senior gets target APY, Junior gets residual.
- *      Loss waterfall (3 layers): Junior → Senior yield-tier → Senior principal-tier.
- *      See MATH_REFERENCE §E5 for gain splitting and §E9 for loss waterfall.
+ * @notice Tranche classification shared across every contract that
+ *         touches per-tranche accounting.
+ */
+enum TrancheKind { JUNIOR, MEZZANINE, SENIOR }
+
+/**
+ * @title  IAccounting
+ * @notice Pure-calculation contract owning tranche TVLs, reserve,
+ *         APR pipeline, and the Senior compounding index. Driven by
+ *         the CDO; holds no funds.
  */
 interface IAccounting {
-    // ═══════════════════════════════════════════════════════════════════
-    //  MUTATIVE
-    // ═══════════════════════════════════════════════════════════════════
+    event AccountingUpdated(
+        uint256 totalStrategyAssets,
+        uint256 jrTvl,
+        uint256 mzTvl,
+        uint256 srTvl,
+        uint256 reserveTvl
+    );
+
+    event AprDataChangedViaPush(UD60x18 aprTarget, UD60x18 aprBase);
+    event AprPairFeedChanged(address feed);
+    event RiskParametersChanged(UD60x18 riskX, UD60x18 riskY, UD60x18 riskK);
+    event AlphaWeightsChanged(uint256 alphaJr, uint256 alphaMz);
+    event ReservePercentageChanged(uint256 reserveBps);
+    event ReserveReduced(uint256 baseAssets);
+    event BalanceFlowUpdated(
+        uint256 jrIn, uint256 jrOut,
+        uint256 mzIn, uint256 mzOut,
+        uint256 srIn, uint256 srOut
+    );
+    event FeeAccrued(address indexed tranche, uint256 assets);
+    event SeniorImpaired(uint256 lossToSenior, uint256 seniorNavAfter);
+    event LossAbsorbed(
+        uint256 totalLoss,
+        uint256 jrAbsorbed,
+        uint256 mzAbsorbed,
+        uint256 srAbsorbed
+    );
 
     /**
-     * @notice Update all TVL values based on current strategy position.
-     * @dev Only callable by the paired PrimeCDO. Computes gain/loss, splits gains
-     *      according to Senior APR target (Junior gets residual), runs 3-layer loss
-     *      waterfall on negative gain. Updates srtTargetIndex and lastUpdateTimestamp.
-     *      See MATH_REFERENCE §C1-C5 for gain splitting, §D4 for loss waterfall.
-     * @param currentStrategyTVL Current total assets reported by the strategy
+     * @notice Refresh accounting using `totalStrategyAssets` as the
+     *         freshest strategy NAV. Allocates `netGain` per the
+     *         yield-split / loss-waterfall rules and advances the
+     *         Senior target index.
      */
-    function updateTVL(uint256 currentStrategyTVL) external;
+    function updateAccounting(uint256 totalStrategyAssets) external;
+
+    // @notice Record per-tranche deposit / withdraw flows.
+    function updateBalanceFlow(
+        uint256 jrIn, uint256 jrOut,
+        uint256 mzIn, uint256 mzOut,
+        uint256 srIn, uint256 srOut
+    ) external;
+
+    // @notice NAV-only refresh; no balance deltas to record.
+    function updateBalanceFlow() external;
 
     /**
-     * @notice Record a new deposit into a tranche's TVL
-     * @dev Only callable by the paired PrimeCDO. Increases the tranche's tracked TVL.
-     * @param id Target tranche
-     * @param amount Base-equivalent amount deposited
+     * @notice Move accrued fees from `tranche`'s TVL into reserve.
+     * @param  tranche The tranche address; kind resolved via CDO.
+     * @param  assets  Fee amount in base-asset units.
      */
-    function recordDeposit(TrancheId id, uint256 amount) external;
+    function accrueFee(address tranche, uint256 assets) external;
 
     /**
-     * @notice Record a withdrawal from a tranche's TVL
-     * @dev Only callable by the paired PrimeCDO. Decreases the tranche's tracked TVL.
-     * @param id Target tranche
-     * @param amount Base-equivalent amount withdrawn
+     * @notice Decrement the reserve bucket by `baseAssets` for
+     *         treasury drain. No redistribution.
      */
-    function recordWithdraw(TrancheId id, uint256 amount) external;
+    function reduceReserve(uint256 baseAssets) external;
 
     /**
-     * @notice Record a fee deducted from a tranche's TVL
-     * @dev Only callable by the paired PrimeCDO. Moves amount from tranche TVL to reserve.
-     * @param id Tranche the fee was charged to
-     * @param feeAmount Fee amount in base-equivalent
+     * @notice Refresh accounting and pull the latest
+     *         `(aprTarget, aprBase)` pair from the wired feed.
      */
-    function recordFee(TrancheId id, uint256 feeAmount) external;
+    function onAprChanged() external;
+
+    // @notice Set the APR pair-feed contract. Validates feed decimals.
+    function setAprPairFeed(IAPRFeed aprPairFeed_) external;
 
     /**
-     * @notice Claim accumulated reserve (fees + gain cuts). Resets s_reserveTVL to 0.
-     * @dev Only callable by the paired PrimeCDO.
-     * @return amount Reserve amount claimed (base-equivalent, 18 decimals)
+     * @notice Set the Senior risk-premium parameters in
+     *         `risk = x + y × tvlRatio^k`.
      */
-    function claimReserve() external returns (uint256 amount);
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  VIEW
-    // ═══════════════════════════════════════════════════════════════════
+    function setRiskParameters(UD60x18 riskX_, UD60x18 riskY_, UD60x18 riskK_) external;
 
     /**
-     * @notice Get TVL for a specific tranche
-     * @param id Tranche to query
-     * @return TVL in base-equivalent (18 decimals)
+     * @notice Set the residual-split alpha weights for Jr/Mz, encoded
+     *         in 1e18. Both must be non-zero and `<= 10e18`.
      */
-    function getTrancheTVL(TrancheId id) external view returns (uint256);
+    function setAlphaWeights(uint256 jr, uint256 mz) external;
 
     /**
-     * @notice Get Junior TVL
-     * @return Junior TVL in base-equivalent (18 decimals)
+     * @notice Set the share of positive delta routed to reserve, in
+     *         1e18. Capped at `RESERVE_BPS_MAX` (20%).
      */
-    function getJuniorTVL() external view returns (uint256);
+    function setReserveBps(uint256 bps) external;
 
-    /**
-     * @notice Get TVL for both tranches at once
-     * @return sr Senior TVL
-     * @return jr Junior TVL
-     */
-    function getAllTVLs() external view returns (uint256 sr, uint256 jr);
+    // @notice Compute tranche assets given a fresh strategy TVL.
+    function totalAssets(uint256 totalStrategyAssets)
+        external view
+        returns (
+            uint256 jrAssets,
+            uint256 mzAssets,
+            uint256 srAssets,
+            uint256 reserveAssets
+        );
 
-    /**
-     * @notice Get the Senior locked-in USDai value (sum of deposits at deposit-time
-     *         sUSDai/USDai exchange rate; excludes accrued yield).
-     * @dev Equivalent to (sUSDai shares Senior contributed) × (deposit-time rate). When
-     *      sUSDai depreciates, the loss waterfall absorbs from Junior → Senior yield-tier
-     *      (TVL - principal) → Senior principal-tier (this), preserving this locked-in
-     *      value as long as Junior and Senior's accrued yield can cover.
-     * @return Senior locked-in USDai value (18 decimals)
-     */
-    function getSeniorPrincipal() external view returns (uint256);
+    // @notice Snapshot of the last-recorded TVLs (no fresh calc).
+    function totalAssetsT0()
+        external view
+        returns (
+            uint256 jrTvl,
+            uint256 mzTvl,
+            uint256 srTvl,
+            uint256 reserveTvl
+        );
 
-    /**
-     * @notice Get the current computed Senior APY
-     * @dev Computed from risk premium curves and APR feed.
-     *      Formula: APY_sr = MAX(aaveBenchmark, baseAPY × (1 - RP1))
-     *      See MATH_REFERENCE §E5.
-     * @return Senior APY as 18-decimal fixed-point
-     */
-    function getSeniorAPY() external view returns (uint256);
+    // @notice TVL of a single tranche. Reverts on unwired addresses.
+    function totalAssets(address tranche) external view returns (uint256);
 
-    /**
-     * @notice Get the current computed Junior residual APY
-     * @dev Junior receives the net strategy yield minus Senior claim, leveraged by Sr/Jr.
-     *      Normal: JuniorAPY = baseAPY + (baseAPY - seniorAPY) × (Sr / Jr).
-     *      Floor active: JuniorAPY = max(0, baseAPY - (seniorAPY - baseAPY) × (Sr / Jr)).
-     *      See MATH_REFERENCE §C5.
-     * @return Junior residual APY as 18-decimal fixed-point
-     */
-    function getJuniorAPY() external view returns (uint256);
+    function aprPairFeed() external view returns (IAPRFeed);
+
+    function aprTarget() external view returns (UD60x18);
+    function aprBase() external view returns (UD60x18);
+    function aprSrt() external view returns (UD60x18);
+
+    function riskX() external view returns (UD60x18);
+    function riskY() external view returns (UD60x18);
+    function riskK() external view returns (UD60x18);
+
+    function alphaJr() external view returns (uint256);
+    function alphaMz() external view returns (uint256);
+    function reserveBps() external view returns (uint256);
+
+    function srtTargetIndex() external view returns (uint256);
+    function lastUpdateTime() external view returns (uint256);
 }
